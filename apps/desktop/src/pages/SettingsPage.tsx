@@ -15,6 +15,7 @@ import {
   taskStatusClass,
 } from "../appModel";
 import { api } from "../api";
+import { SearchIcon } from "../components/AppIcons";
 import { FloatingNoticeStack } from "../components/FloatingNoticeStack";
 import type { EnvironmentInfo, RuntimeStatus, ServiceSettings, StorageLocationKind, StorageDirectoryStat, StorageOverview, TaskSummary } from "../types";
 import { formatDateTime, taskStatusLabel } from "../utils";
@@ -68,6 +69,60 @@ type SettingsPageProps = {
 };
 
 const TASK_LIST_LIMIT = 60;
+
+type SettingsSearchItem = {
+  category: SettingsCategory;
+  targetKey: string;
+  title: string;
+  description: string;
+  keywords: string[];
+};
+
+const SETTINGS_SEARCH_ITEMS: SettingsSearchItem[] = [
+  { category: "general", targetKey: "host", title: "监听地址", description: "服务绑定的 IP 地址。", keywords: ["host", "ip", "地址", "服务入口"] },
+  { category: "general", targetKey: "port", title: "监听端口", description: "后端服务端口号。", keywords: ["port", "端口", "3838"] },
+  { category: "directories", targetKey: "data_dir", title: "数据目录", description: "视频摘要和元数据保存位置。", keywords: ["data", "目录", "存储", "数据库"] },
+  { category: "directories", targetKey: "cache_dir", title: "缓存目录", description: "临时缓存文件保存位置。", keywords: ["cache", "缓存", "临时文件"] },
+  { category: "directories", targetKey: "tasks_dir", title: "任务目录", description: "任务历史和结果文件位置。", keywords: ["task", "tasks", "任务", "历史"] },
+  { category: "directories", targetKey: "output_dir", title: "输出目录", description: "Markdown / Obsidian 导出目录。", keywords: ["output", "导出", "obsidian", "markdown", "笔记"] },
+  { category: "fileManagement", targetKey: "storage_cleanup", title: "空间清理", description: "查看占用并清理缓存和孤儿任务。", keywords: ["清理", "空间", "缓存", "孤儿", "storage"] },
+  { category: "model", targetKey: "transcription_provider", title: "转写方式", description: "选择云端 ASR 或本地 ASR。", keywords: ["asr", "转写", "语音识别", "whisper", "本地"] },
+  { category: "model", targetKey: "siliconflow_asr_base_url", title: "SiliconFlow Base URL", description: "云端转写 API 地址。", keywords: ["siliconflow", "base url", "api", "硅基流动"] },
+  { category: "model", targetKey: "siliconflow_asr_api_key", title: "SiliconFlow API Key", description: "云端转写 API 密钥。", keywords: ["key", "apikey", "api key", "密钥", "硅基流动"] },
+  { category: "model", targetKey: "siliconflow_asr_model", title: "ASR 模型", description: "云端转写模型名称。", keywords: ["model", "模型", "teleai", "telespeechasr"] },
+  { category: "model", targetKey: "device_preference", title: "推理设备", description: "本地 ASR 使用 CPU 或 CUDA。", keywords: ["cuda", "gpu", "cpu", "设备"] },
+  { category: "model", targetKey: "fixed_model", title: "Whisper 固定模型", description: "本地 Whisper 模型大小。", keywords: ["whisper", "tiny", "base", "small", "medium", "large"] },
+  { category: "llm", targetKey: "llm_enabled", title: "启用 LLM 摘要", description: "打开或关闭大模型摘要。", keywords: ["llm", "摘要", "开启", "关闭"] },
+  { category: "llm", targetKey: "auto_generate_mindmap", title: "自动生成思维导图", description: "摘要完成后自动生成导图。", keywords: ["导图", "mindmap", "自动", "思维导图"] },
+  { category: "llm", targetKey: "llm_base_url", title: "LLM API Base URL", description: "主摘要 LLM API 地址。", keywords: ["base url", "openai", "compatible", "api", "地址"] },
+  { category: "llm", targetKey: "llm_api_key", title: "LLM API Key", description: "主摘要 LLM API 密钥。", keywords: ["key", "apikey", "api key", "密钥"] },
+  { category: "llm", targetKey: "llm_model", title: "LLM 模型名称", description: "主摘要使用的模型名。", keywords: ["model", "模型", "gpt", "qwen", "mimo", "claude"] },
+  { category: "knowledge", targetKey: "knowledge_enabled", title: "启用知识库", description: "开启知识库索引和问答能力。", keywords: ["知识库", "knowledge", "rag", "索引", "问答"] },
+  { category: "knowledge", targetKey: "knowledge_dependencies", title: "知识库依赖", description: "安装和检查知识库扩展依赖。", keywords: ["依赖", "安装", "runtime", "faiss", "向量"] },
+  { category: "knowledge", targetKey: "knowledge_llm_mode", title: "知识库 LLM 来源", description: "跟随主 LLM 或使用独立配置。", keywords: ["知识库", "llm", "来源", "独立配置"] },
+  { category: "knowledge", targetKey: "knowledge_llm_base_url", title: "知识库 API Base URL", description: "独立知识库 LLM API 地址。", keywords: ["知识库", "base url", "api", "openai"] },
+  { category: "knowledge", targetKey: "knowledge_llm_api_key", title: "知识库 API Key", description: "独立知识库 LLM API 密钥。", keywords: ["知识库", "key", "apikey", "密钥"] },
+  { category: "knowledge", targetKey: "knowledge_llm_model", title: "知识库模型名称", description: "独立知识库 LLM 模型名。", keywords: ["知识库", "model", "模型", "问答"] },
+  { category: "summary", targetKey: "summary_mode", title: "摘要模式", description: "LLM 智能摘要或抽取式摘要。", keywords: ["摘要", "summary", "抽取式", "llm"] },
+  { category: "summary", targetKey: "language", title: "语言", description: "摘要输出语言。", keywords: ["语言", "中文", "english", "日本語"] },
+  { category: "summary", targetKey: "summary_chunk_target_chars", title: "分块目标字符数", description: "LLM 分块处理的目标长度。", keywords: ["分块", "chunk", "字符", "长度"] },
+  { category: "summary", targetKey: "summary_chunk_overlap_segments", title: "分块重叠段数", description: "摘要分块之间保留的重叠段落。", keywords: ["重叠", "overlap", "分块"] },
+  { category: "summary", targetKey: "summary_chunk_retry_count", title: "重试次数", description: "摘要 API 失败后的重试次数。", keywords: ["重试", "retry", "失败"] },
+  { category: "summary", targetKey: "knowledge_note_system_prompt", title: "知识笔记 System Prompt", description: "控制知识笔记角色、风格和整体约束。", keywords: ["知识笔记", "prompt", "system", "提示词", "风格"] },
+  { category: "summary", targetKey: "knowledge_note_user_prompt_template", title: "知识笔记 User Template", description: "控制知识笔记变量、结构和 Markdown 格式。", keywords: ["知识笔记", "template", "模板", "格式", "summary_json", "transcript"] },
+  { category: "performance", targetKey: "task_concurrency", title: "任务并发数", description: "控制整体任务吞吐。", keywords: ["并发", "concurrency", "任务", "性能"] },
+  { category: "performance", targetKey: "mindmap_concurrency", title: "导图并发数", description: "控制导图生成并发。", keywords: ["导图", "并发", "mindmap"] },
+  { category: "performance", targetKey: "summary_chunk_concurrency", title: "摘要分块并发数", description: "控制单任务内部摘要请求并发。", keywords: ["摘要", "分块", "并发", "chunk"] },
+  { category: "advanced", targetKey: "cuda_variant", title: "CUDA 变体", description: "选择 PyTorch CUDA 版本。", keywords: ["cuda", "cu128", "cu126", "cu124", "gpu"] },
+  { category: "advanced", targetKey: "runtime_channel", title: "运行时通道", description: "选择基础版或 GPU 运行时。", keywords: ["runtime", "运行时", "gpu", "base"] },
+  { category: "advanced", targetKey: "preserve_temp_audio", title: "保留临时音频", description: "控制是否保留转写中间音频。", keywords: ["音频", "临时", "preserve", "temp"] },
+  { category: "advanced", targetKey: "enable_cache", title: "启用缓存", description: "控制任务缓存行为。", keywords: ["缓存", "cache"] },
+  { category: "advanced", targetKey: "ytdlp_cookies_file", title: "yt-dlp Cookies 文件", description: "配置 B 站登录态 cookies.txt。", keywords: ["cookie", "cookies", "b站", "登录", "风控", "412"] },
+  { category: "environment", targetKey: "runtime_status", title: "运行时状态", description: "检查 Python、Torch、CUDA 与扩展依赖。", keywords: ["运行时", "环境", "torch", "python", "cuda"] },
+  { category: "environment", targetKey: "local_asr_runtime", title: "本地 ASR 运行时", description: "安装或检查本地 ASR 依赖。", keywords: ["本地", "asr", "whisper", "安装"] },
+  { category: "logs", targetKey: "service_logs", title: "服务日志", description: "查看后端服务日志。", keywords: ["日志", "log", "报错", "服务"] },
+  { category: "updates", targetKey: "app_updates", title: "应用更新", description: "检查桌面应用新版本。", keywords: ["更新", "版本", "update", "release"] },
+];
 
 function formatStorageSize(sizeBytes: number) {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
@@ -192,6 +247,7 @@ export function SettingsPage({
   const [pendingFocusTarget, setPendingFocusTarget] = useState<string | null>(null);
   const [activeFocusTarget, setActiveFocusTarget] = useState<string | null>(null);
   const [knowledgePromptGuideOpen, setKnowledgePromptGuideOpen] = useState(false);
+  const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [taskListOpen, setTaskListOpen] = useState(false);
   const [taskListLoading, setTaskListLoading] = useState(false);
   const [taskListError, setTaskListError] = useState("");
@@ -400,6 +456,24 @@ export function SettingsPage({
   const activeCategoryMeta = settingsCategories.find((category) => category.id === activeCategory) || settingsCategories[0];
   const workspaceCategories = settingsCategories.filter((category) => category.group === "workspace");
   const systemCategories = settingsCategories.filter((category) => category.group === "system");
+  const normalizedSettingsSearchQuery = settingsSearchQuery.trim().toLowerCase();
+  const settingsSearchTokens = normalizedSettingsSearchQuery.split(/\s+/).filter(Boolean);
+  const settingsSearchResults = normalizedSettingsSearchQuery
+    ? SETTINGS_SEARCH_ITEMS
+      .map((item) => {
+        const category = settingsCategories.find((entry) => entry.id === item.category);
+        const haystack = [
+          item.title,
+          item.description,
+          category?.label || "",
+          category?.description || "",
+          ...item.keywords,
+        ].join(" ").toLowerCase();
+        return settingsSearchTokens.every((token) => haystack.includes(token)) ? { ...item, categoryLabel: category?.label || item.category } : null;
+      })
+      .filter((item): item is SettingsSearchItem & { categoryLabel: string } => Boolean(item))
+      .slice(0, 8)
+    : [];
   const llmReady = Boolean(form?.llm_enabled && form?.llm_api_key_configured);
   const knowledgeLlmUsesCustom = String(form?.knowledge_llm_mode || "same_as_main").trim().toLowerCase() === "custom";
   const knowledgeLlmReady = knowledgeLlmUsesCustom
@@ -779,6 +853,12 @@ export function SettingsPage({
     };
   }
 
+  function focusSettingTarget(category: SettingsCategory, targetKey: string) {
+    setActiveCategory(category);
+    setPendingFocusTarget(targetKey);
+    setSettingsSearchQuery("");
+  }
+
   function resolveIssueTarget(issueKey: string): { category: SettingsCategory; targetKey: string } | null {
     if (!form) {
       return null;
@@ -941,6 +1021,44 @@ export function SettingsPage({
 
       <main className="settings-content">
         <div className="settings-content-scroll">
+          <section className="settings-search-panel" aria-label="搜索设置">
+            <div className="settings-search-box">
+              <SearchIcon className="settings-search-icon" aria-hidden="true" />
+              <input
+                className="settings-search-input"
+                type="search"
+                value={settingsSearchQuery}
+                onChange={(event) => setSettingsSearchQuery(event.target.value)}
+                placeholder="搜索设置，例如 API Key、输出目录、知识笔记、并发、Cookies"
+              />
+              {settingsSearchQuery ? (
+                <button className="settings-search-clear" type="button" onClick={() => setSettingsSearchQuery("")}>
+                  清空
+                </button>
+              ) : null}
+            </div>
+            {normalizedSettingsSearchQuery ? (
+              <div className="settings-search-results" role="listbox" aria-label="设置搜索结果">
+                {settingsSearchResults.length ? settingsSearchResults.map((item) => (
+                  <button
+                    key={`${item.category}:${item.targetKey}`}
+                    className="settings-search-result"
+                    type="button"
+                    role="option"
+                    onClick={() => focusSettingTarget(item.category, item.targetKey)}
+                  >
+                    <span className="settings-search-result-main">
+                      <strong>{item.title}</strong>
+                      <span>{item.description}</span>
+                    </span>
+                    <span className="settings-search-result-category">{item.categoryLabel}</span>
+                  </button>
+                )) : (
+                  <div className="settings-search-empty">没有找到相关设置，换个关键词试试。</div>
+                )}
+              </div>
+            ) : null}
+          </section>
           <header className="settings-page-hero">
             <div className="settings-page-hero-copy">
               <span className="settings-page-kicker">Settings</span>
@@ -1202,7 +1320,13 @@ export function SettingsPage({
                 </label>
                 <label className="settings-input-group">
                   <span className="settings-input-label">监听端口</span>
-                  <input className="settings-input-field" type="number" value={form.port} onChange={(e) => updateForm({ ...form, port: parseInt(e.target.value) || 3838 })} />
+                  <input
+                    className="settings-input-field"
+                    ref={registerFocusTarget("port") as (node: HTMLInputElement | null) => void}
+                    type="number"
+                    value={form.port}
+                    onChange={(e) => updateForm({ ...form, port: parseInt(e.target.value) || 3838 })}
+                  />
                   <span className="settings-input-caption">服务端口号，默认 3838</span>
                 </label>
               </div>
@@ -1216,22 +1340,22 @@ export function SettingsPage({
                 <p>数据存储和缓存目录配置。</p>
               </header>
               <div className="settings-form-group">
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("data_dir") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">数据目录</span>
                   <input className="settings-input-field" value={String(form.data_dir)} onChange={(e) => updateForm({ ...form, data_dir: e.target.value })} />
                   <span className="settings-input-caption">存储视频摘要和元数据</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("cache_dir") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">缓存目录</span>
                   <input className="settings-input-field" value={String(form.cache_dir)} onChange={(e) => updateForm({ ...form, cache_dir: e.target.value })} />
                   <span className="settings-input-caption">临时缓存文件</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("tasks_dir") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">任务目录</span>
                   <input className="settings-input-field" value={String(form.tasks_dir)} onChange={(e) => updateForm({ ...form, tasks_dir: e.target.value })} />
                   <span className="settings-input-caption">任务历史记录</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("output_dir") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">输出目录</span>
                   <input className="settings-input-field" value={String(form.output_dir)} onChange={(e) => updateForm({ ...form, output_dir: e.target.value })} />
                   <span className="settings-input-caption">手动导出的 Markdown / Obsidian 笔记会写入这里。</span>
@@ -1247,7 +1371,7 @@ export function SettingsPage({
                 <p>查看本地空间占用，并安全清理缓存和孤儿任务目录。</p>
               </header>
 
-              <div className="settings-update-overview">
+              <div className="settings-update-overview" ref={registerFocusTarget("storage_cleanup") as (node: HTMLDivElement | null) => void}>
                 <div className="settings-update-copy">
                   <span className="settings-story-kicker">Storage</span>
                   <h3>当前本地占用</h3>
@@ -1387,7 +1511,7 @@ export function SettingsPage({
                       <input className="settings-input-field" type="password" value={form.siliconflow_asr_api_key} onChange={(e) => updateForm({ ...form, siliconflow_asr_api_key: e.target.value })} placeholder="sk-..." />
                       <SiliconFlowApiKeyHelp />
                     </label>
-                    <label className="settings-input-group">
+                    <label className="settings-input-group" ref={registerFocusTarget("siliconflow_asr_model") as (node: HTMLLabelElement | null) => void}>
                       <span className="settings-input-label">ASR 模型</span>
                       <input className="settings-input-field" value={form.siliconflow_asr_model} onChange={(e) => updateForm({ ...form, siliconflow_asr_model: e.target.value })} placeholder="TeleAI/TeleSpeechASR" />
                       <span className="settings-input-caption">首批支持 `TeleAI/TeleSpeechASR`。</span>
@@ -1408,7 +1532,7 @@ export function SettingsPage({
                   </>
                 ) : (
                   <>
-                    <label className="settings-input-group">
+                    <label className="settings-input-group" ref={registerFocusTarget("device_preference") as (node: HTMLLabelElement | null) => void}>
                       <span className="settings-input-label">推理设备</span>
                       <select className="settings-select-field" value={normalizeDevicePreference(form.device_preference)} onChange={(e) => updateForm({ ...form, device_preference: e.target.value })}>
                         <option value="auto">自动选择</option>
@@ -1425,7 +1549,7 @@ export function SettingsPage({
                       </select>
                       <span className="settings-input-caption">自动模式会根据设备选择最优模型</span>
                     </label>
-                    <label className="settings-input-group">
+                    <label className="settings-input-group" ref={registerFocusTarget("fixed_model") as (node: HTMLLabelElement | null) => void}>
                       <span className="settings-input-label">固定模型</span>
                       <input className="settings-input-field" value={form.fixed_model} onChange={(e) => updateForm({ ...form, fixed_model: e.target.value })} placeholder="tiny / base / small / medium / large-v3" />
                       <span className="settings-input-caption">Whisper 模型名称，小模型速度快但精度低</span>
@@ -1456,7 +1580,7 @@ export function SettingsPage({
                   </select>
                   <span className="settings-input-caption">使用大语言模型生成更高质量的视频摘要</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("auto_generate_mindmap") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">自动生成思维导图</span>
                   <select className="settings-select-field" value={form.auto_generate_mindmap ? "true" : "false"} onChange={(e) => updateForm({ ...form, auto_generate_mindmap: e.target.value === "true" })}>
                     <option value="false">关闭</option>
@@ -1525,7 +1649,7 @@ export function SettingsPage({
                 <p>知识库默认关闭，依赖按需安装到当前运行时，不进入默认安装包。</p>
               </header>
               <div className="settings-form-group">
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("knowledge_enabled") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">启用知识库</span>
                   <select
                     className="settings-select-field"
@@ -1691,14 +1815,14 @@ export function SettingsPage({
                 <p>摘要生成算法参数配置。</p>
               </header>
               <div className="settings-form-group">
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("summary_mode") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">摘要模式</span>
                   <select className="settings-select-field" value={form.summary_mode} onChange={(e) => updateForm({ ...form, summary_mode: e.target.value })}>
                     <option value="llm">LLM 智能摘要</option>
                     <option value="extract">抽取式摘要</option>
                   </select>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("language") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">语言</span>
                   <select className="settings-select-field" value={form.language} onChange={(e) => updateForm({ ...form, language: e.target.value })}>
                     <option value="zh">中文</option>
@@ -1706,22 +1830,22 @@ export function SettingsPage({
                     <option value="ja">日本語</option>
                   </select>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("summary_chunk_target_chars") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">分块目标字符数</span>
                   <input className="settings-input-field" type="number" min={1} value={form.summary_chunk_target_chars} onChange={(e) => updateForm({ ...form, summary_chunk_target_chars: parseMinOneInt(e.target.value, 2200) })} />
                   <span className="settings-input-caption">LLM 处理时分块的目标字符数</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("summary_chunk_overlap_segments") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">分块重叠段数</span>
                   <input className="settings-input-field" type="number" min={1} value={form.summary_chunk_overlap_segments} onChange={(e) => updateForm({ ...form, summary_chunk_overlap_segments: parseMinOneInt(e.target.value, 2) })} />
                   <span className="settings-input-caption">分块之间的重叠段数，保证连续性</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("summary_chunk_retry_count") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">重试次数</span>
                   <input className="settings-input-field" type="number" min={1} value={form.summary_chunk_retry_count} onChange={(e) => updateForm({ ...form, summary_chunk_retry_count: parseMinOneInt(e.target.value, 2) })} />
                   <span className="settings-input-caption">API 调用失败时的重试次数</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("knowledge_note_system_prompt") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">知识笔记 System Prompt</span>
                   <textarea
                     className="textarea-field"
@@ -1736,7 +1860,7 @@ export function SettingsPage({
                     <span className="settings-input-caption">控制知识笔记生成时的角色、风格和整体约束。</span>
                   </div>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("knowledge_note_user_prompt_template") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">知识笔记 User Template</span>
                   <textarea
                     className="textarea-field"
@@ -1773,17 +1897,17 @@ export function SettingsPage({
                 <p>控制任务级并发与单任务内部分块并发，减少本地资源争抢和云端限流压力。</p>
               </header>
               <div className="settings-form-group">
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("task_concurrency") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">任务并发数</span>
                   <input className="settings-input-field" type="number" min={1} value={form.task_concurrency} onChange={(e) => updateForm({ ...form, task_concurrency: parseMinOneInt(e.target.value, recommendedTaskConcurrency) })} />
                   <span className="settings-input-caption">影响下载、转写、摘要的整体链路吞吐；云 API 可能存在并发限流，建议按当前环境推荐值设置。</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("mindmap_concurrency") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">导图并发数</span>
                   <input className="settings-input-field" type="number" min={1} value={form.mindmap_concurrency} onChange={(e) => updateForm({ ...form, mindmap_concurrency: parseMinOneInt(e.target.value, 1) })} />
                   <span className="settings-input-caption">影响摘要完成后的导图生成吞吐，不会占用摘要任务的并发槽位；建议保持 1。</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("summary_chunk_concurrency") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">摘要分块并发数</span>
                   <input className="settings-input-field" type="number" min={1} value={form.summary_chunk_concurrency} onChange={(e) => updateForm({ ...form, summary_chunk_concurrency: parseMinOneInt(e.target.value, 2) })} />
                   <span className="settings-input-caption">仅控制单个摘要任务内部同时请求的分块数量，不等同于任务并发数。</span>
@@ -1814,7 +1938,7 @@ export function SettingsPage({
                 <p>CUDA 变体和运行时配置。</p>
               </header>
               <div className="settings-form-group">
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("cuda_variant") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">CUDA 变体</span>
                   <select className="settings-select-field" value={form.cuda_variant} onChange={(e) => updateForm({ ...form, cuda_variant: e.target.value })}>
                     <option value="cu128">CUDA 12.8</option>
@@ -1823,7 +1947,7 @@ export function SettingsPage({
                   </select>
                   <span className="settings-input-caption">PyTorch CUDA 版本</span>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("runtime_channel") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">运行时通道</span>
                   <select className="settings-select-field" value={form.runtime_channel} onChange={(e) => updateForm({ ...form, runtime_channel: e.target.value })}>
                     <option value="base">基础版</option>
@@ -1832,14 +1956,14 @@ export function SettingsPage({
                     <option value="gpu-cu124">GPU CUDA12.4</option>
                   </select>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("preserve_temp_audio") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">保留临时音频</span>
                   <select className="settings-select-field" value={form.preserve_temp_audio ? "true" : "false"} onChange={(e) => updateForm({ ...form, preserve_temp_audio: e.target.value === "true" })}>
                     <option value="false">不保留</option>
                     <option value="true">保留</option>
                   </select>
                 </label>
-                <label className="settings-input-group">
+                <label className="settings-input-group" ref={registerFocusTarget("enable_cache") as (node: HTMLLabelElement | null) => void}>
                   <span className="settings-input-label">启用缓存</span>
                   <select className="settings-select-field" value={form.enable_cache ? "true" : "false"} onChange={(e) => updateForm({ ...form, enable_cache: e.target.value === "true" })}>
                     <option value="true">开启</option>
@@ -1869,7 +1993,7 @@ export function SettingsPage({
                 <h2>运行环境</h2>
                 <p>环境检测信息、CUDA 配置和本地 ASR 安装。</p>
               </header>
-              <div className="env-summary-grid settings-env-grid">
+              <div className="env-summary-grid settings-env-grid" ref={registerFocusTarget("runtime_status") as (node: HTMLDivElement | null) => void}>
                 <div className="metric-card">
                   <span className="metric-label">推荐设备</span>
                   <strong className="metric-value">{environment?.recommendedDevice || "-"}</strong>
@@ -2128,7 +2252,7 @@ export function SettingsPage({
                 <h2>日志与控制</h2>
                 <p>查看后端日志并控制服务。</p>
               </header>
-              <div className="control-status-row">
+              <div className="control-status-row" ref={registerFocusTarget("service_logs") as (node: HTMLDivElement | null) => void}>
                 <span className={`helper-chip ${serviceOnline ? "status-success" : "status-failed"}`}>{serviceOnline ? "服务在线" : "服务离线"}</span>
                 <span className={`helper-chip ${backendRunning ? (backendReady ? "status-success" : "status-running") : "status-pending"}`}>
                   {backendRunning ? (backendReady ? "内置后端运行中" : "内置后端启动中") : "内置后端未运行"}
@@ -2195,7 +2319,7 @@ export function SettingsPage({
                 <h2>桌面应用更新</h2>
                 <p>{canInstallUpdate ? "检查新版本并管理安装。" : "查看最新版本信息与更新日志。"}</p>
               </header>
-              <div className="settings-update-module">
+              <div className="settings-update-module" ref={registerFocusTarget("app_updates") as (node: HTMLDivElement | null) => void}>
                 <div className="settings-update-overview">
                   <div className="settings-update-copy">
                     <span className="settings-story-kicker">Update</span>

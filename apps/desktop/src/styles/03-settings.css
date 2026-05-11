@@ -261,6 +261,128 @@
   gap: 28px;
 }
 
+.settings-search-panel {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid var(--settings-border);
+  background: var(--settings-panel-bg);
+  box-shadow: var(--settings-shadow);
+}
+
+.settings-search-box {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--settings-border);
+  border-radius: 16px;
+  background: var(--settings-muted-bg);
+}
+
+.settings-search-icon {
+  width: 17px;
+  height: 17px;
+  color: var(--settings-kicker);
+}
+
+.settings-search-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--settings-text-strong);
+  font: inherit;
+}
+
+.settings-search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.settings-search-clear {
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: var(--bg-subtle);
+  color: var(--settings-text-soft);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.settings-search-clear:hover {
+  color: var(--settings-text-strong);
+  background: var(--bg-card);
+}
+
+.settings-search-results {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-search-result {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--settings-text-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.settings-search-result:hover {
+  transform: translateY(-1px);
+  border-color: var(--settings-accent-border);
+  background: var(--settings-accent-bg);
+}
+
+.settings-search-result-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-search-result-main strong {
+  color: var(--settings-text-strong);
+  font-size: 0.92rem;
+}
+
+.settings-search-result-main span {
+  overflow: hidden;
+  color: var(--settings-text-soft);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-search-result-category {
+  justify-self: end;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--brand-600);
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.settings-search-empty {
+  padding: 12px 14px;
+  color: var(--settings-text-soft);
+  font-size: 0.84rem;
+}
+
 .settings-page-hero {
   display: flex;
   align-items: flex-end;
