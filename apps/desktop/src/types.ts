@@ -156,10 +156,11 @@ export type TaskMindMapResponse = {
 };
 
 export type TaskMarkdownExportTarget = "markdown" | "obsidian";
+export type TaskExportTarget = TaskMarkdownExportTarget | "transcript";
 
 export type TaskMarkdownExportResponse = {
   task_id: string;
-  target_format: TaskMarkdownExportTarget;
+  target_format: TaskExportTarget;
   path: string;
   directory: string;
   file_name: string;
@@ -267,6 +268,8 @@ export type ServiceSettings = {
   knowledge_index_auto_rebuild: string;
   summary_system_prompt: string;
   summary_user_prompt_template: string;
+  knowledge_note_system_prompt: string;
+  knowledge_note_user_prompt_template: string;
   summary_chunk_target_chars: number;
   summary_chunk_overlap_segments: number;
   task_concurrency: number;

@@ -29,6 +29,10 @@ from video_sum_core.models.tasks import InputType, MindMapNode, TaskMindMap, Tas
 from video_sum_core.pipeline.base import PipelineContext, PipelineEvent, PipelineEventReporter, PipelineRunner
 from video_sum_core.utils import ensure_directory, normalize_video_url, sanitize_filename
 from video_sum_infra.llm import normalize_openai_compatible_model_name
+from video_sum_infra.config import (
+    DEFAULT_KNOWLEDGE_NOTE_SYSTEM_PROMPT,
+    DEFAULT_KNOWLEDGE_NOTE_USER_PROMPT_TEMPLATE,
+)
 from video_sum_infra.runtime import (
     ffmpeg_location,
     runtime_library_dirs,
@@ -159,6 +163,8 @@ class PipelineSettings:
     llm_model: str = ""
     summary_system_prompt: str = ""
     summary_user_prompt_template: str = ""
+    knowledge_note_system_prompt: str = ""
+    knowledge_note_user_prompt_template: str = ""
     mindmap_system_prompt: str = ""
     mindmap_user_prompt_template: str = ""
     summary_chunk_target_chars: int = 2200
@@ -1776,61 +1782,25 @@ P 数索引：
         segments_excerpt: str,
         summary_json: str,
     ) -> list[dict[str, str]]:
+        system_prompt = (
+            self._settings.knowledge_note_system_prompt.strip()
+            if self._settings.knowledge_note_system_prompt.strip()
+            else DEFAULT_KNOWLEDGE_NOTE_SYSTEM_PROMPT
+        )
+        user_template = (
+            self._settings.knowledge_note_user_prompt_template.strip()
+            if self._settings.knowledge_note_user_prompt_template.strip()
+            else DEFAULT_KNOWLEDGE_NOTE_USER_PROMPT_TEMPLATE
+        )
         return [
             {
                 "role": "system",
-                "content": (
-                    "你是一名严谨、擅长整理学习型内容的中文知识编辑。"
-                    "你的任务是基于转写、分段和现有结构化摘要，单独产出一篇适合阅读的知识笔记。"
-                    "知识笔记必须比知识卡片更完整，能够承担学习、回顾和查阅任务。"
-                    "所有内容都必须忠实原文，不得编造，不得补充外部资料，不得输出 JSON 以外的任何文字。"
-                    "You must return valid json only."
-                ),
+                "content": system_prompt,
             },
             {
                 "role": "user",
                 "content": self._render_user_prompt_template(
-                    """请阅读下面的视频资料，并输出一个 JSON 对象。
-注意：你必须返回合法的 json 对象，且只返回 json。
-
-目标：
-基于原始转写和结构化摘要，生成一篇适合详情页“知识笔记”阅读视图的 Markdown 笔记。
-
-强约束：
-1. 顶层只允许包含 knowledgeNoteMarkdown 一个字段。
-2. knowledgeNoteMarkdown 必须是一篇完整 Markdown 笔记，不要输出代码围栏包裹整篇内容。
-3. 笔记必须明显区别于知识卡片：
-   - 不要只是把 bulletPoints 改写一遍；
-   - 要有连续叙述、上下文解释、章节展开和重点串联；
-   - 允许引用已有结构化摘要，但必须重新组织为适合阅读的笔记。
-4. 遇到知识类内容时，优先组织为：核心结论、关键概念、推理/方法、章节展开、易错点/限制。
-5. 遇到教程、评论、新闻等非知识类内容时，退化为通用深度笔记：主题概览、关键信息、内容推进、结论/影响。
-6. 只有在原文确实涉及公式、符号、函数、逻辑表达式时才使用 LaTeX：
-   - 行内公式使用 `$...$`
-   - 独立公式使用 `$$...$$`
-   - 不要强行输出数学公式。
-7. 不要照抄转写全文，不要把原始 transcript 直接拼进笔记主体。
-8. 不要补充外部背景，不要编造例子，不要猜测说话者未表达的动机。
-
-写作要求：
-- 标题层级清楚，便于长文阅读。
-- 保留定义、条件、因果、例子、结论、限制、争议等高价值信息。
-- 如果结构化摘要过于简略，应优先参考转写和分段把笔记写得更完整。
-
-输出格式示例：
-{{"knowledgeNoteMarkdown":"# 标题\n\n## 核心结论\n\n..."}}
-
-视频标题：
-{title}
-
-已有结构化摘要：
-{summary_json}
-
-转写节选：
-{transcript_excerpt}
-
-分段数据节选：
-{segments_excerpt}""",
+                    user_template,
                     title=title,
                     transcript_excerpt=transcript_excerpt,
                     segments_excerpt=segments_excerpt,

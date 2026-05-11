@@ -238,8 +238,18 @@ export const api = {
   getTaskMindMap(taskId: string) {
     return fetchJson<TaskMindMapResponse>(`/api/v1/tasks/${taskId}/mindmap`);
   },
-  exportTaskMarkdown(taskId: string, payload?: { target?: "markdown" | "obsidian" }) {
+  exportTaskMarkdown(
+    taskId: string,
+    payload?: { target?: "markdown" | "obsidian"; include_transcript?: boolean; output_dir?: string },
+  ) {
     return fetchJson<TaskMarkdownExportResponse>(`/api/v1/tasks/${taskId}/exports/markdown`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload ?? {}),
+    });
+  },
+  exportTaskTranscript(taskId: string, payload?: { output_dir?: string }) {
+    return fetchJson<TaskMarkdownExportResponse>(`/api/v1/tasks/${taskId}/exports/transcript`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload ?? {}),

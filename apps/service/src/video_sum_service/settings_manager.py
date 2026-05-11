@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from video_sum_infra.config import (
+    DEFAULT_KNOWLEDGE_NOTE_SYSTEM_PROMPT,
+    DEFAULT_KNOWLEDGE_NOTE_USER_PROMPT_TEMPLATE,
     DEFAULT_SUMMARY_SYSTEM_PROMPT,
     DEFAULT_SUMMARY_USER_PROMPT_TEMPLATE,
     LEGACY_SUMMARY_SYSTEM_PROMPT,
@@ -58,6 +60,8 @@ class SettingsUpdatePayload(BaseModel):
     knowledge_enabled: bool | None = None
     summary_system_prompt: str | None = None
     summary_user_prompt_template: str | None = None
+    knowledge_note_system_prompt: str | None = None
+    knowledge_note_user_prompt_template: str | None = None
     summary_chunk_target_chars: int | None = None
     summary_chunk_overlap_segments: int | None = None
     task_concurrency: int | None = None
@@ -93,6 +97,10 @@ class SettingsManager:
                 stored["summary_user_prompt_template"] = DEFAULT_SUMMARY_USER_PROMPT_TEMPLATE
             if stored.get("summary_user_prompt_template") == PREVIOUS_DEFAULT_SUMMARY_USER_PROMPT_TEMPLATE:
                 stored["summary_user_prompt_template"] = DEFAULT_SUMMARY_USER_PROMPT_TEMPLATE
+            if "knowledge_note_system_prompt" not in stored:
+                stored["knowledge_note_system_prompt"] = DEFAULT_KNOWLEDGE_NOTE_SYSTEM_PROMPT
+            if "knowledge_note_user_prompt_template" not in stored:
+                stored["knowledge_note_user_prompt_template"] = DEFAULT_KNOWLEDGE_NOTE_USER_PROMPT_TEMPLATE
             migrated = False
             candidate = ServiceSettings.model_validate({**self._base_settings.model_dump(), **stored})
             if "task_concurrency" not in stored:

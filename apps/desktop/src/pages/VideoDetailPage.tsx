@@ -244,6 +244,9 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
   const [mindMapLoading, setMindMapLoading] = useState<Record<string, boolean>>({});
   const [isExportingKnowledgeCard, setIsExportingKnowledgeCard] = useState(false);
   const [isExportingKnowledgeNote, setIsExportingKnowledgeNote] = useState(false);
+  const [isExportingTranscript, setIsExportingTranscript] = useState(false);
+  const [knowledgeNoteExportMenuOpen, setKnowledgeNoteExportMenuOpen] = useState(false);
+  const [includeTranscriptInNoteExport, setIncludeTranscriptInNoteExport] = useState(false);
   const [knowledgeOutputDir, setKnowledgeOutputDir] = useState("");
   const [lastKnowledgeExport, setLastKnowledgeExport] = useState<TaskMarkdownExportResponse | null>(null);
   const [expandedChapterGroupIds, setExpandedChapterGroupIds] = useState<string[]>([]);
@@ -262,6 +265,7 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
   const playerFrameRef = useRef<HTMLDivElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const knowledgeExportRef = useRef<HTMLElement | null>(null);
+  const knowledgeNoteExportMenuRef = useRef<HTMLDivElement | null>(null);
   const lastChapterGroupSignatureRef = useRef("");
   const activeVideoIdRef = useRef(videoId);
   const selectedTaskIdRef = useRef<string | null>(null);
@@ -485,6 +489,7 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
     setStatus("");
     setMindMaps({});
     setMindMapLoading({});
+    setKnowledgeNoteExportMenuOpen(false);
     setLastKnowledgeExport(null);
     setSelectedPageNumber(null);
     setPageMenuOpen(false);
@@ -698,7 +703,7 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
   }, [latestEvents, latestTaskId]);
 
   useEffect(() => {
-    if (taskPanelState !== "expanded" && !actionMenuOpen && !pageMenuOpen) {
+    if (taskPanelState !== "expanded" && !actionMenuOpen && !pageMenuOpen && !knowledgeNoteExportMenuOpen) {
       return;
     }
 
@@ -707,6 +712,7 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
       const clickedTaskPopover = taskPopoverRef.current?.contains(target);
       const clickedActionMenu = actionMenuRef.current?.contains(target);
       const clickedPageSwitcher = pageSwitcherRef.current?.contains(target);
+      const clickedKnowledgeNoteExportMenu = knowledgeNoteExportMenuRef.current?.contains(target);
       const clickedBatchSide = batchSideRef.current?.contains(target);
 
       if (!clickedTaskPopover && !clickedBatchSide) {
@@ -719,6 +725,9 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
       if (!clickedPageSwitcher) {
         setPageMenuOpen(false);
       }
+      if (!clickedKnowledgeNoteExportMenu) {
+        setKnowledgeNoteExportMenuOpen(false);
+      }
     }
 
     function handleEscape(event: KeyboardEvent) {
@@ -727,6 +736,7 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
         setActionMenuOpen(false);
         setActionMenuSection(null);
         setPageMenuOpen(false);
+        setKnowledgeNoteExportMenuOpen(false);
       }
     }
 
@@ -736,7 +746,7 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
       document.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [actionMenuOpen, pageMenuOpen, taskPanelState]);
+  }, [actionMenuOpen, knowledgeNoteExportMenuOpen, pageMenuOpen, taskPanelState]);
 
   async function handleCopyKnowledgeCardAsImage() {
     if (!knowledgeExportRef.current || isExportingKnowledgeCard) {
@@ -923,6 +933,10 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
   const selectedKnowledgeNoteMarkdown = useMemo(() => resolveKnowledgeNoteMarkdown(selectedResult), [selectedResult]);
   const canExportSelectedKnowledgeNote = useMemo(() => canExportKnowledgeNote(selectedTaskDetail), [selectedTaskDetail]);
   const selectedTranscript = selectedResult?.transcript_text ?? "";
+  const canExportSelectedTranscript = Boolean(
+    selectedTaskDetail?.status === "completed"
+      && (selectedTranscript.trim() || selectedResult?.artifacts?.transcript_path),
+  );
   const liveStatus = latestTaskDetail?.status ?? latestTaskSummary?.status ?? video?.latest_status;
   const liveMessage = latestTaskLoadError
     ?? describeUserFacingErrorMessage(liveProgress.failedEvent?.message)
@@ -1295,9 +1309,19 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
       return;
     }
     setIsExportingKnowledgeNote(true);
+    setKnowledgeNoteExportMenuOpen(false);
     setStatus(target === "obsidian" ? "正在导出 Obsidian 笔记..." : "正在导出 Markdown 笔记...");
     try {
-      const response = await api.exportTaskMarkdown(selectedTaskId, { target });
+      const pickedDirectory = await window.desktop?.dialog?.pickDirectory?.(knowledgeOutputDir || undefined);
+      if (window.desktop?.dialog && !pickedDirectory) {
+        setStatus("已取消导出。");
+        return;
+      }
+      const response = await api.exportTaskMarkdown(selectedTaskId, {
+        target,
+        include_transcript: includeTranscriptInNoteExport,
+        output_dir: pickedDirectory || undefined,
+      });
       setLastKnowledgeExport(response);
       setKnowledgeOutputDir((current) => current || response.directory);
       await refreshDetail({ preferredTaskId: selectedTaskId, forceTaskIds: [selectedTaskId] });
@@ -1306,6 +1330,30 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
       setStatus(error instanceof Error ? error.message : "导出 Markdown 失败");
     } finally {
       setIsExportingKnowledgeNote(false);
+    }
+  }
+
+  async function handleExportTranscript() {
+    if (!selectedTaskId || isExportingTranscript) {
+      return;
+    }
+    setIsExportingTranscript(true);
+    setStatus("正在导出转写文本...");
+    try {
+      const pickedDirectory = await window.desktop?.dialog?.pickDirectory?.(knowledgeOutputDir || undefined);
+      if (window.desktop?.dialog && !pickedDirectory) {
+        setStatus("已取消导出。");
+        return;
+      }
+      const response = await api.exportTaskTranscript(selectedTaskId, { output_dir: pickedDirectory || undefined });
+      setLastKnowledgeExport(response);
+      setKnowledgeOutputDir((current) => current || response.directory);
+      await refreshDetail({ preferredTaskId: selectedTaskId, forceTaskIds: [selectedTaskId] });
+      setStatus(`已导出到 ${response.file_name}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "导出转写文本失败");
+    } finally {
+      setIsExportingTranscript(false);
     }
   }
 
@@ -2197,16 +2245,48 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
                       <h3 className="detail-section-label">Knowledge Note</h3>
                       <div className="detail-section-heading-actions">
                         <span className="detail-section-meta">完整学习视图</span>
-                        <button
-                          className="detail-section-icon-button"
-                          type="button"
-                          disabled={!canExportSelectedKnowledgeNote || isExportingKnowledgeNote || !knowledgeOutputDir}
-                          onClick={() => void handleExportKnowledgeNote("obsidian")}
-                          aria-label={isExportingKnowledgeNote ? "正在导出 Obsidian 笔记" : "导出到 Obsidian"}
-                          title={isExportingKnowledgeNote ? "正在导出 Obsidian 笔记" : "导出到 Obsidian"}
-                        >
-                          <IconExportNote />
-                        </button>
+                        <div className="detail-section-menu" ref={knowledgeNoteExportMenuRef}>
+                          <button
+                            className={`detail-section-icon-button detail-section-menu-trigger ${knowledgeNoteExportMenuOpen ? "is-open" : ""}`}
+                            type="button"
+                            disabled={!canExportSelectedKnowledgeNote || isExportingKnowledgeNote}
+                            onClick={() => setKnowledgeNoteExportMenuOpen((current) => !current)}
+                            aria-haspopup="menu"
+                            aria-expanded={knowledgeNoteExportMenuOpen}
+                            aria-label={isExportingKnowledgeNote ? "正在导出 Obsidian 笔记" : "导出知识笔记"}
+                            title={isExportingKnowledgeNote ? "正在导出 Obsidian 笔记" : "导出知识笔记"}
+                          >
+                            <IconExportNote />
+                            <IconChevronDown className="detail-section-menu-caret" />
+                          </button>
+                          {knowledgeNoteExportMenuOpen ? (
+                            <div className="detail-section-popover" role="menu" aria-label="知识笔记导出设置">
+                              <button
+                                className="detail-section-menu-item"
+                                type="button"
+                                role="menuitem"
+                                disabled={!canExportSelectedKnowledgeNote || isExportingKnowledgeNote}
+                                onClick={() => void handleExportKnowledgeNote("obsidian")}
+                              >
+                                <span className="detail-section-menu-item-icon" aria-hidden="true">
+                                  <IconExportNote />
+                                </span>
+                                <span className="detail-section-menu-copy">
+                                  <strong>{isExportingKnowledgeNote ? "正在导出..." : "导出到 Obsidian"}</strong>
+                                  <small>选择目录后写入 Markdown 笔记</small>
+                                </span>
+                              </button>
+                              <label className="detail-section-menu-check" role="menuitemcheckbox" aria-checked={includeTranscriptInNoteExport}>
+                                <input
+                                  type="checkbox"
+                                  checked={includeTranscriptInNoteExport}
+                                  onChange={(event) => setIncludeTranscriptInNoteExport(event.target.checked)}
+                                />
+                                <span>导出笔记时附带转写全文</span>
+                              </label>
+                            </div>
+                          ) : null}
+                        </div>
                         {lastKnowledgeExport?.directory && window.desktop?.shell ? (
                           <button
                             className="detail-section-icon-button"
@@ -2223,7 +2303,7 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
                       </div>
                     </div>
                     <h4 className="detail-section-title">知识笔记</h4>
-                    {!knowledgeOutputDir ? (
+                    {!knowledgeOutputDir && !window.desktop?.dialog ? (
                       <p className="detail-section-body">导出前请先在设置中填写输出目录，Markdown / Obsidian 笔记会写入该目录。</p>
                     ) : null}
                     {selectedKnowledgeNoteMarkdown ? (
@@ -2236,7 +2316,19 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
                   <section className="detail-content-section">
                     <div className="detail-section-heading">
                       <h3 className="detail-section-label">Transcript</h3>
-                      <span className="detail-section-meta">{selectedTranscript ? "原始转写" : "暂无内容"}</span>
+                      <div className="detail-section-heading-actions">
+                        <span className="detail-section-meta">{selectedTranscript ? "原始转写" : "暂无内容"}</span>
+                        <button
+                          className="detail-section-icon-button"
+                          type="button"
+                          disabled={!canExportSelectedTranscript || isExportingTranscript}
+                          onClick={() => void handleExportTranscript()}
+                          aria-label={isExportingTranscript ? "正在导出转写文本" : "导出转写文本"}
+                          title={isExportingTranscript ? "正在导出转写文本" : "导出转写文本"}
+                        >
+                          <IconExportNote />
+                        </button>
+                      </div>
                     </div>
                     <pre className="transcript-full">{selectedTranscript || "暂无转写全文。"}</pre>
                   </section>

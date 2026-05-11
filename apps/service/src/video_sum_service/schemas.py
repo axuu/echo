@@ -32,6 +32,12 @@ class AggregateSummaryRequest(BaseModel):
 
 class TaskMarkdownExportRequest(BaseModel):
     target: Literal["markdown", "obsidian"] = "obsidian"
+    include_transcript: bool = False
+    output_dir: str | None = None
+
+
+class TaskTranscriptExportRequest(BaseModel):
+    output_dir: str | None = None
 
 
 class VideoTaskBatchPageResponse(BaseModel):
@@ -176,7 +182,7 @@ class TaskMindMapResponse(BaseModel):
 
 class TaskMarkdownExportResponse(BaseModel):
     task_id: str
-    target_format: Literal["markdown", "obsidian"]
+    target_format: Literal["markdown", "obsidian", "transcript"]
     path: str
     directory: str
     file_name: str

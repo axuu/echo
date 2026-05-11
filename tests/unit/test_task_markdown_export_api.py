@@ -12,7 +12,7 @@ from video_sum_service import task_exports
 from video_sum_service.app import app, settings_manager
 from video_sum_service.repository import SqliteTaskRepository
 from video_sum_service.schemas import VideoAssetRecord
-from video_sum_service.task_exports import export_task_markdown
+from video_sum_service.task_exports import export_task_markdown, export_task_transcript
 
 
 def create_repository() -> SqliteTaskRepository:
@@ -41,6 +41,7 @@ def create_completed_task(repository: SqliteTaskRepository) -> str:
         record.task_id,
         TaskResult(
             overview="概览",
+            transcript_text="[00:00] 转写内容",
             knowledge_note_markdown="# 测试导出视频\n\n## 核心概览\n\n概览",
             key_points=["要点一"],
             timeline=[{"title": "章节一", "start": 12.0, "summary": "章节摘要"}],
@@ -100,6 +101,33 @@ def test_export_task_markdown_writes_file_and_persists_artifact(tmp_path: Path) 
     content = Path(response.path).read_text(encoding="utf-8")
     assert content.startswith("---\n")
     assert "## 关键要点" in content
+    assert "## 转写全文" not in content
+
+
+def test_export_task_markdown_can_include_transcript_and_override_output_dir(tmp_path: Path) -> None:
+    repository = create_repository()
+    task_id = create_completed_task(repository)
+    app.state.task_repository = repository
+    settings = ServiceSettings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        tasks_dir=tmp_path / "tasks",
+        output_dir=str(tmp_path / "default-vault"),
+    )
+    settings_manager._settings = settings
+
+    response = export_task_markdown(
+        repository,
+        settings,
+        task_id,
+        include_transcript=True,
+        output_dir=str(tmp_path / "picked-vault"),
+    )
+
+    assert Path(response.path).parent == tmp_path / "picked-vault"
+    content = Path(response.path).read_text(encoding="utf-8")
+    assert "## 转写全文" in content
+    assert "[00:00] 转写内容" in content
 
 
 def test_export_task_markdown_avoids_overwriting_existing_file(
@@ -166,3 +194,44 @@ def test_export_task_markdown_rejects_task_without_note(tmp_path: Path) -> None:
 
     with pytest.raises(HTTPException, match="知识笔记"):
         export_task_markdown(repository, settings, record.task_id)
+
+
+def test_export_task_transcript_writes_file_and_persists_artifact(tmp_path: Path) -> None:
+    repository = create_repository()
+    task_id = create_completed_task(repository)
+    app.state.task_repository = repository
+    settings = ServiceSettings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        tasks_dir=tmp_path / "tasks",
+        output_dir=str(tmp_path / "vault"),
+    )
+    settings_manager._settings = settings
+
+    response = export_task_transcript(repository, settings, task_id)
+    refreshed = repository.get_task(task_id)
+
+    assert response.target_format == "transcript"
+    assert response.file_name.endswith(".txt")
+    assert Path(response.path).read_text(encoding="utf-8") == "[00:00] 转写内容"
+    assert refreshed is not None
+    assert refreshed.result is not None
+    assert refreshed.result.artifacts["transcript_export_path"] == response.path
+
+
+def test_export_task_transcript_rejects_task_without_transcript(tmp_path: Path) -> None:
+    repository = create_repository()
+    task_id = create_completed_task(repository)
+    record = repository.get_task(task_id)
+    assert record is not None
+    repository.save_result(task_id, record.result.model_copy(update={"transcript_text": "", "artifacts": {}}))
+    app.state.task_repository = repository
+    settings = ServiceSettings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        tasks_dir=tmp_path / "tasks",
+        output_dir=str(tmp_path / "vault"),
+    )
+
+    with pytest.raises(HTTPException, match="转写全文"):
+        export_task_transcript(repository, settings, task_id)

@@ -143,6 +143,10 @@ const desktop = {
   shell: {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktop:shell:open-path", targetPath) as Promise<string>,
   },
+  dialog: {
+    pickDirectory: (defaultPath?: string) =>
+      ipcRenderer.invoke("desktop:dialog:pick-directory", defaultPath) as Promise<string | null>,
+  },
   logs: {
     getServiceLogPath: () => ipcRenderer.invoke("desktop:logs:get-service-log-path") as Promise<string>,
     readServiceLogTail: (lines = 200) =>

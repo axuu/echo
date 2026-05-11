@@ -91,6 +91,56 @@ function parseMinOneInt(value: string, fallback: number) {
   return Math.max(1, parsed);
 }
 
+const DEFAULT_KNOWLEDGE_NOTE_SYSTEM_PROMPT = (
+  "你是一名严谨、擅长整理学习型内容的中文知识编辑。"
+  + "你的任务是基于转写、分段和现有结构化摘要，单独产出一篇适合阅读的知识笔记。"
+  + "知识笔记必须比知识卡片更完整，能够承担学习、回顾和查阅任务。"
+  + "所有内容都必须忠实原文，不得编造，不得补充外部资料，不得输出 JSON 以外的任何文字。"
+  + "You must return valid json only."
+);
+
+const DEFAULT_KNOWLEDGE_NOTE_USER_PROMPT_TEMPLATE = `请阅读下面的视频资料，并输出一个 JSON 对象。
+注意：你必须返回合法的 json 对象，且只返回 json。
+
+目标：
+基于原始转写和结构化摘要，生成一篇适合详情页“知识笔记”阅读视图的 Markdown 笔记。
+
+强约束：
+1. 顶层只允许包含 knowledgeNoteMarkdown 一个字段。
+2. knowledgeNoteMarkdown 必须是一篇完整 Markdown 笔记，不要输出代码围栏包裹整篇内容。
+3. 笔记必须明显区别于知识卡片：
+   - 不要只是把 bulletPoints 改写一遍；
+   - 要有连续叙述、上下文解释、章节展开和重点串联；
+   - 允许引用已有结构化摘要，但必须重新组织为适合阅读的笔记。
+4. 遇到知识类内容时，优先组织为：核心结论、关键概念、推理/方法、章节展开、易错点/限制。
+5. 遇到教程、评论、新闻等非知识类内容时，退化为通用深度笔记：主题概览、关键信息、内容推进、结论/影响。
+6. 只有在原文确实涉及公式、符号、函数、逻辑表达式时才使用 LaTeX：
+   - 行内公式使用 \`$...$\`
+   - 独立公式使用 \`$$...$$\`
+   - 不要强行输出数学公式。
+7. 不要照抄转写全文，不要把原始 transcript 直接拼进笔记主体。
+8. 不要补充外部背景，不要编造例子，不要猜测说话者未表达的动机。
+
+写作要求：
+- 标题层级清楚，便于长文阅读。
+- 保留定义、条件、因果、例子、结论、限制、争议等高价值信息。
+- 如果结构化摘要过于简略，应优先参考转写和分段把笔记写得更完整。
+
+输出格式示例：
+{{"knowledgeNoteMarkdown":"# 标题\\n\\n## 核心结论\\n\\n..."}}
+
+视频标题：
+{title}
+
+已有结构化摘要：
+{summary_json}
+
+转写节选：
+{transcript_excerpt}
+
+分段数据节选：
+{segments_excerpt}`;
+
 export function SettingsPage({
   snapshot,
   desktop,
@@ -141,6 +191,7 @@ export function SettingsPage({
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>("overview");
   const [pendingFocusTarget, setPendingFocusTarget] = useState<string | null>(null);
   const [activeFocusTarget, setActiveFocusTarget] = useState<string | null>(null);
+  const [knowledgePromptGuideOpen, setKnowledgePromptGuideOpen] = useState(false);
   const [taskListOpen, setTaskListOpen] = useState(false);
   const [taskListLoading, setTaskListLoading] = useState(false);
   const [taskListError, setTaskListError] = useState("");
@@ -497,6 +548,19 @@ export function SettingsPage({
   function updateForm(next: ServiceSettings) {
     setIsDirty(true);
     setForm(next);
+  }
+
+  function resetKnowledgeNotePrompt(field: "system" | "template") {
+    if (!form) return;
+    updateForm({
+      ...form,
+      knowledge_note_system_prompt: field === "system"
+        ? DEFAULT_KNOWLEDGE_NOTE_SYSTEM_PROMPT
+        : form.knowledge_note_system_prompt,
+      knowledge_note_user_prompt_template: field === "template"
+        ? DEFAULT_KNOWLEDGE_NOTE_USER_PROMPT_TEMPLATE
+        : form.knowledge_note_user_prompt_template,
+    });
   }
 
   function validateSettingsBeforeSave(nextForm: ServiceSettings): { message: string; category: SettingsCategory; targetKey: string } | null {
@@ -1657,6 +1721,47 @@ export function SettingsPage({
                   <input className="settings-input-field" type="number" min={1} value={form.summary_chunk_retry_count} onChange={(e) => updateForm({ ...form, summary_chunk_retry_count: parseMinOneInt(e.target.value, 2) })} />
                   <span className="settings-input-caption">API 调用失败时的重试次数</span>
                 </label>
+                <label className="settings-input-group">
+                  <span className="settings-input-label">知识笔记 System Prompt</span>
+                  <textarea
+                    className="textarea-field"
+                    rows={5}
+                    value={form.knowledge_note_system_prompt || ""}
+                    onChange={(e) => updateForm({ ...form, knowledge_note_system_prompt: e.target.value })}
+                  />
+                  <div className="settings-inline-actions">
+                    <button className="secondary-button" type="button" onClick={() => resetKnowledgeNotePrompt("system")}>
+                      恢复默认
+                    </button>
+                    <span className="settings-input-caption">控制知识笔记生成时的角色、风格和整体约束。</span>
+                  </div>
+                </label>
+                <label className="settings-input-group">
+                  <span className="settings-input-label">知识笔记 User Template</span>
+                  <textarea
+                    className="textarea-field"
+                    rows={14}
+                    value={form.knowledge_note_user_prompt_template || ""}
+                    onChange={(e) => updateForm({ ...form, knowledge_note_user_prompt_template: e.target.value })}
+                  />
+                  <div className="settings-inline-actions">
+                    <button className="secondary-button" type="button" onClick={() => resetKnowledgeNotePrompt("template")}>
+                      恢复默认
+                    </button>
+                    <span className="settings-input-caption">
+                      可用变量：{"{title}"}、{"{transcript_excerpt}"}、{"{segments_excerpt}"}、{"{summary_json}"}。
+                    </span>
+                  </div>
+                </label>
+                <div className="settings-guide-card">
+                  <div>
+                    <strong>想调整知识笔记样式？</strong>
+                    <span>查看变量、默认结构和常见改法，避免破坏 JSON 输出格式。</span>
+                  </div>
+                  <button className="secondary-button" type="button" onClick={() => setKnowledgePromptGuideOpen(true)}>
+                    打开教程
+                  </button>
+                </div>
               </div>
             </section>
           )}
@@ -2213,6 +2318,89 @@ export function SettingsPage({
           )}
         </div>
       </main>
+      {knowledgePromptGuideOpen ? (
+        <div className="update-dialog-overlay" role="presentation" onClick={() => setKnowledgePromptGuideOpen(false)}>
+          <section
+            className="update-dialog knowledge-prompt-guide-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="knowledge-prompt-guide-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="update-dialog-header">
+              <h2 id="knowledge-prompt-guide-title">知识笔记提示词教程</h2>
+              <button className="close-button" type="button" aria-label="关闭教程" onClick={() => setKnowledgePromptGuideOpen(false)}>
+                ×
+              </button>
+            </header>
+            <div className="update-dialog-body knowledge-prompt-guide-body">
+              <section className="knowledge-prompt-guide-section">
+                <h3>两个输入框分别控制什么</h3>
+                <p>
+                  System Prompt 负责定义角色、底线和总体风格，例如“严谨的中文知识编辑”“不得编造”“只输出 JSON”。
+                  User Template 负责规定笔记结构、可用素材和输出格式，是调整笔记样式的主要位置。
+                </p>
+              </section>
+              <section className="knowledge-prompt-guide-section">
+                <h3>可用变量</h3>
+                <div className="knowledge-prompt-guide-grid">
+                  <span>{"{title}"}</span>
+                  <p>视频标题，适合用于生成笔记标题或判断主题。</p>
+                  <span>{"{summary_json}"}</span>
+                  <p>前一步结构化摘要，包含要点、章节、结论等信息。可以保留，也可以在模板里弱化它的权重。</p>
+                  <span>{"{transcript_excerpt}"}</span>
+                  <p>转写节选，适合补充细节和原文语境。</p>
+                  <span>{"{segments_excerpt}"}</span>
+                  <p>带时间或分段的信息，适合让笔记按章节展开。</p>
+                </div>
+              </section>
+              <section className="knowledge-prompt-guide-section">
+                <h3>默认笔记格式</h3>
+                <p>默认模板倾向生成一篇长阅读型 Markdown 笔记，通常包含：</p>
+                <ul>
+                  <li>核心结论：先给出视频最重要的观点。</li>
+                  <li>关键概念：整理定义、条件、术语和背景。</li>
+                  <li>章节展开：按内容推进顺序补全上下文。</li>
+                  <li>易错点或限制：保留限制、争议、例外和注意事项。</li>
+                </ul>
+              </section>
+              <section className="knowledge-prompt-guide-section">
+                <h3>怎么修改笔记样式</h3>
+                <p>想改格式时，优先改 User Template 里的“写作要求”或“目标结构”。例如：</p>
+                <pre>{`请把 knowledgeNoteMarkdown 写成以下结构：
+# {title}
+
+## 一句话总结
+...
+
+## 关键问题
+- ...
+
+## 可执行清单
+- ...
+
+## 原文中的限制
+- ...`}</pre>
+                <p>
+                  如果想要更短，就写“每个小节不超过 5 条要点”。如果想要课程笔记风格，就写“优先使用定义、例子、推导、复盘题”。
+                </p>
+              </section>
+              <section className="knowledge-prompt-guide-section warning">
+                <h3>不要删掉的约束</h3>
+                <p>
+                  最终仍必须只返回合法 JSON，并且顶层字段必须是 <code>knowledgeNoteMarkdown</code>。
+                  可以改变 Markdown 内容结构，但不要让模型直接输出普通 Markdown，否则任务会解析失败。
+                </p>
+              </section>
+            </div>
+            <footer className="update-dialog-footer">
+              <button className="primary-button" type="button" onClick={() => setKnowledgePromptGuideOpen(false)}>
+                知道了
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
       {taskListOpen ? (
         <div className="settings-tasklist-float" role="dialog" aria-modal="false" aria-label="最近任务列表" onClick={() => setTaskListOpen(false)}>
           <div className="settings-tasklist-panel" onClick={(event) => event.stopPropagation()}>

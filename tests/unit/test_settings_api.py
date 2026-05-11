@@ -82,6 +82,8 @@ def test_serialize_settings_includes_persisted_file_flag(monkeypatch, tmp_path: 
     assert payload["settings_file_exists"] is False
     assert payload["task_concurrency"] == current.task_concurrency
     assert payload["mindmap_concurrency"] == current.mindmap_concurrency
+    assert payload["knowledge_note_system_prompt"] == current.knowledge_note_system_prompt
+    assert payload["knowledge_note_user_prompt_template"] == current.knowledge_note_user_prompt_template
 
     settings_manager._settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_manager._settings_path.write_text("{}", encoding="utf-8")

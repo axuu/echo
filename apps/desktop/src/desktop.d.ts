@@ -102,6 +102,9 @@ type DesktopBridge = {
   shell: {
     openPath(targetPath: string): Promise<string>;
   };
+  dialog: {
+    pickDirectory(defaultPath?: string): Promise<string | null>;
+  };
   logs: {
     getServiceLogPath(): Promise<string>;
     readServiceLogTail(lines?: number): Promise<{ path: string; lines: number; content: string }>;

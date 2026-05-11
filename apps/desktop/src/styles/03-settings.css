@@ -811,6 +811,113 @@
   min-width: 148px;
 }
 
+.settings-guide-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 18px;
+  border: 1px solid rgba(251, 114, 153, 0.16);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(251, 114, 153, 0.08), rgba(59, 130, 246, 0.07));
+}
+
+.settings-guide-card > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.settings-guide-card strong {
+  color: var(--settings-text-strong);
+  font-size: 0.94rem;
+}
+
+.settings-guide-card span {
+  color: var(--settings-text-soft);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.knowledge-prompt-guide-dialog {
+  width: min(760px, calc(100vw - 40px));
+}
+
+.knowledge-prompt-guide-body {
+  display: grid;
+  gap: 18px;
+}
+
+.knowledge-prompt-guide-section {
+  display: grid;
+  gap: 10px;
+}
+
+.knowledge-prompt-guide-section h3 {
+  margin: 0;
+  color: var(--settings-text-strong);
+  font-size: 0.98rem;
+}
+
+.knowledge-prompt-guide-section p,
+.knowledge-prompt-guide-section li {
+  margin: 0;
+  color: var(--settings-text-soft);
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+
+.knowledge-prompt-guide-section ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.knowledge-prompt-guide-section code {
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--settings-text-strong);
+  font-size: 0.84rem;
+}
+
+.knowledge-prompt-guide-section pre {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--settings-border);
+  border-radius: 14px;
+  overflow: auto;
+  background: var(--settings-elevated-bg);
+  color: var(--settings-text-strong);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.knowledge-prompt-guide-section.warning {
+  padding: 14px 16px;
+  border: 1px solid rgba(213, 137, 24, 0.22);
+  border-radius: 16px;
+  background: rgba(213, 137, 24, 0.08);
+}
+
+.knowledge-prompt-guide-grid {
+  display: grid;
+  grid-template-columns: minmax(128px, auto) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: start;
+}
+
+.knowledge-prompt-guide-grid span {
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--brand-600);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8rem;
+}
+
 .settings-input-help {
   display: flex;
   flex-wrap: wrap;
