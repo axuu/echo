@@ -6,7 +6,8 @@ module.exports = {
     output: "../../dist/desktop"
   },
   files: [
-    "dist-electron/**/*"
+    "dist-electron/**/*",
+    "announcement.md"
   ],
   extraResources: [
     {

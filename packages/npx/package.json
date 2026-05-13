@@ -36,8 +36,5 @@
   "license": "MIT",
   "publishConfig": {
     "access": "public"
-  },
-  "dependencies": {
-    "bilisum": "^1.13.3"
   }
 }

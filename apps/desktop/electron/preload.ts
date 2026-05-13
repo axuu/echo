@@ -32,6 +32,7 @@ document.addEventListener(
 );
 
 type CloseBehavior = "ask" | "tray" | "exit";
+type ThemePreference = "light" | "dark";
 
 export type DesktopBackendStatus = {
   running: boolean;
@@ -157,6 +158,8 @@ const desktop = {
     setCloseBehavior: (value: CloseBehavior) =>
       ipcRenderer.invoke("desktop:preferences:set-close-behavior", value) as Promise<CloseBehavior>,
     resetCloseBehavior: () => ipcRenderer.invoke("desktop:preferences:reset-close-behavior") as Promise<CloseBehavior>,
+    setTheme: (value: ThemePreference) =>
+      ipcRenderer.invoke("desktop:preferences:set-theme", value) as Promise<ThemePreference>,
   },
   update: {
     check: () => ipcRenderer.invoke("desktop:update:check") as Promise<UpdateInfo>,
@@ -172,12 +175,12 @@ const desktop = {
     },
   },
   fileManager: {
-    getStorageOverview: (input: { dataDir: string; cacheDir: string; tasksDir: string; taskIds?: string[] }) =>
+    getStorageOverview: (input: { taskIds?: string[] }) =>
       ipcRenderer.invoke("desktop:file-manager:get-storage-overview", input) as Promise<StorageOverview>,
-    cleanupOrphans: (input: { cacheDir: string; tasksDir: string; taskIds: string[] }) =>
+    cleanupOrphans: (input: { taskIds: string[] }) =>
       ipcRenderer.invoke("desktop:file-manager:cleanup-orphans", input) as Promise<StorageCleanupResult>,
-    openDirectory: (kind: StorageLocationKind, input: { dataDir: string; cacheDir: string; tasksDir: string }) =>
-      ipcRenderer.invoke("desktop:file-manager:open-directory", kind, input) as Promise<string>,
+    openDirectory: (kind: StorageLocationKind) =>
+      ipcRenderer.invoke("desktop:file-manager:open-directory", kind) as Promise<string>,
   },
 };
 

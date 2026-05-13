@@ -8,7 +8,11 @@ from fastapi import HTTPException
 import video_sum_service.app as service_app
 import video_sum_service.runtime_support as runtime_support
 from video_sum_core.models.tasks import InputType, TaskInput, TaskStatus
-from video_sum_infra.config import ServiceSettings
+from video_sum_infra.config import (
+    DEFAULT_KNOWLEDGE_NOTE_SYSTEM_PROMPT,
+    DEFAULT_KNOWLEDGE_NOTE_USER_PROMPT_TEMPLATE,
+    ServiceSettings,
+)
 from video_sum_service.app import (
     app,
     install_knowledge_dependencies,
@@ -84,6 +88,8 @@ def test_serialize_settings_includes_persisted_file_flag(monkeypatch, tmp_path: 
     assert payload["mindmap_concurrency"] == current.mindmap_concurrency
     assert payload["knowledge_note_system_prompt"] == current.knowledge_note_system_prompt
     assert payload["knowledge_note_user_prompt_template"] == current.knowledge_note_user_prompt_template
+    assert payload["defaults"]["knowledge_note_system_prompt"] == DEFAULT_KNOWLEDGE_NOTE_SYSTEM_PROMPT
+    assert payload["defaults"]["knowledge_note_user_prompt_template"] == DEFAULT_KNOWLEDGE_NOTE_USER_PROMPT_TEMPLATE
 
     settings_manager._settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_manager._settings_path.write_text("{}", encoding="utf-8")
@@ -272,6 +278,44 @@ def test_recover_incomplete_tasks_resubmits_queued_and_running_records() -> None
 
     assert recovered == 2
     assert set(worker.submitted) == {queued.task_id, running.task_id}
+
+
+def test_detect_environment_uses_persisted_cache(monkeypatch, tmp_path: Path) -> None:
+    current = ServiceSettings(
+        cache_dir=tmp_path / "cache",
+        runtime_channel="base",
+    )
+    current.cache_dir.mkdir(parents=True)
+    cache_path = current.cache_dir / "environment-probe-cache.json"
+    cache_path.write_text(
+        """
+        {
+          "base": {
+            "runtimeChannel": "base",
+            "runtimeReady": true,
+            "runtimePython": "cached-python",
+            "cudaAvailable": true,
+            "localAsrAvailable": true,
+            "knowledgeDependenciesReady": true
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    runtime_support._environment_probe_cache.clear()
+    runtime_support._environment_probe_failures.clear()
+    monkeypatch.setattr(runtime_support.settings_manager, "_settings", current)
+    monkeypatch.setattr(runtime_support, "is_frozen", lambda: False)
+    monkeypatch.setattr(
+        runtime_support,
+        "run_host_command",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("probe should not run")),
+    )
+
+    environment = runtime_support.detect_environment("base")
+
+    assert environment["cudaAvailable"] is True
+    assert environment["localAsrAvailable"] is True
 
 
 def test_install_workspace_packages_bootstraps_hatchling_before_local_packages(

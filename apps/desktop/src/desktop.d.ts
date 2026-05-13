@@ -1,4 +1,5 @@
 type CloseBehavior = "ask" | "tray" | "exit";
+type ThemePreference = "light" | "dark";
 
 type DesktopBackendStatus = {
   running: boolean;
@@ -113,6 +114,7 @@ type DesktopBridge = {
     getCloseBehavior(): Promise<CloseBehavior>;
     setCloseBehavior(value: CloseBehavior): Promise<CloseBehavior>;
     resetCloseBehavior(): Promise<CloseBehavior>;
+    setTheme(value: ThemePreference): Promise<ThemePreference>;
   };
   update: {
     check(): Promise<UpdateInfo>;
@@ -122,9 +124,9 @@ type DesktopBridge = {
     onStatus(listener: (status: UpdateInfo) => void): () => void;
   };
   fileManager: {
-    getStorageOverview(input: { dataDir: string; cacheDir: string; tasksDir: string; taskIds?: string[] }): Promise<StorageOverview>;
-    cleanupOrphans(input: { cacheDir: string; tasksDir: string; taskIds: string[] }): Promise<StorageCleanupResult>;
-    openDirectory(kind: StorageLocationKind, input: { dataDir: string; cacheDir: string; tasksDir: string }): Promise<string>;
+    getStorageOverview(input: { taskIds?: string[] }): Promise<StorageOverview>;
+    cleanupOrphans(input: { taskIds: string[] }): Promise<StorageCleanupResult>;
+    openDirectory(kind: StorageLocationKind): Promise<string>;
   };
 };
 

@@ -279,6 +279,10 @@ export type ServiceSettings = {
   ytdlp_cookies_file: string;
   ytdlp_cookies_browser: string;
   settings_file_exists?: boolean;
+  defaults?: {
+    knowledge_note_system_prompt?: string;
+    knowledge_note_user_prompt_template?: string;
+  };
 };
 
 export type SystemInfo = {
@@ -293,6 +297,16 @@ export type SystemInfo = {
     log_file?: string;
   };
   settings?: ServiceSettings;
+  environment?: EnvironmentInfo;
+  runtimeStartup?: RuntimeStartupInfo;
+};
+
+export type RuntimeStartupInfo = {
+  status?: "initializing" | "ready" | "error" | string;
+  message?: string | null;
+  started_at?: string | null;
+  ready_at?: string | null;
+  error_at?: string | null;
   environment?: EnvironmentInfo;
 };
 
