@@ -24,6 +24,7 @@ class TaskOptions(BaseModel):
     summary_mode: str = "auto"
     prefer_subtitles: bool = True
     export_formats: list[str] = Field(default_factory=lambda: ["md", "json"])
+    visual_note_mode: str | None = None
 
 
 class TaskInput(BaseModel):

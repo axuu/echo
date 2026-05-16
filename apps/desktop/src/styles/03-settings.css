@@ -1103,6 +1103,19 @@
   gap: 6px;
 }
 
+.settings-reset-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.settings-reset-row-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .settings-input-label {
   font-size: 0.92rem;
   font-weight: 600;

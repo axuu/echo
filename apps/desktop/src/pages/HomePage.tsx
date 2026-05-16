@@ -30,6 +30,7 @@ type SummaryPreference = {
 };
 
 const SUMMARY_PREFERENCE_STORAGE_KEY = "bilisum.summaryPreference";
+const PREFERENCE_HINT_SEEN_KEY = "bilisum.summaryPreferenceHintSeen";
 const DEFAULT_SUMMARY_PREFERENCE: SummaryPreference = {
   noteMode: "text",
   generateMindmap: false,
@@ -72,10 +73,25 @@ export function HomePage({
   const preferenceMenuRef = useRef<HTMLDivElement | null>(null);
   const [summaryPreference, setSummaryPreference] = useState<SummaryPreference>(() => loadSummaryPreference());
   const [preferenceMenuOpen, setPreferenceMenuOpen] = useState(false);
+  const [preferenceHintDismissed, setPreferenceHintDismissed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.localStorage.getItem(PREFERENCE_HINT_SEEN_KEY) === "1";
+    }
+    return true;
+  });
 
   useEffect(() => {
     window.localStorage.setItem(SUMMARY_PREFERENCE_STORAGE_KEY, JSON.stringify(summaryPreference));
   }, [summaryPreference]);
+
+  const showPreferenceHint = preferenceMenuOpen && !preferenceHintDismissed;
+
+  function dismissPreferenceHint() {
+    setPreferenceHintDismissed(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(PREFERENCE_HINT_SEEN_KEY, "1");
+    }
+  }
 
   useEffect(() => {
     if (!preferenceMenuOpen) {
@@ -115,7 +131,7 @@ export function HomePage({
         <form className="task-form" onSubmit={onProbe}>
           <div className="task-form-row">
             <label className="input-row input-row-hero" style={{ flex: 1 }}>
-              <div className="input-with-icon" style={{ flex: 1 }}>
+              <div className="input-with-icon" style={{ flex: 1 }} data-home-tour="input">
                 <span className="input-icon" aria-hidden="true"><LinkIcon /></span>
                 <input
                   className={`input-field input-field-hero ${canImportLocalVideo ? "input-field-with-action" : ""}`.trim()}
@@ -131,6 +147,7 @@ export function HomePage({
                     type="button"
                     aria-label="导入本地视频"
                     title="导入本地视频"
+                    data-home-tour="local-video"
                     onClick={() => void onImportLocalVideo()}
                   >
                     <LocalVideoIcon />
@@ -138,7 +155,7 @@ export function HomePage({
                 ) : null}
               </div>
             </label>
-            <div className="summary-submit-control" ref={preferenceMenuRef}>
+            <div className="summary-submit-control" ref={preferenceMenuRef} data-home-tour="submit">
               <div className="summary-split-button">
                 <button className="primary-button primary-button-hero summary-submit-main" type="submit">
                   开始总结
@@ -157,6 +174,21 @@ export function HomePage({
               </div>
               {preferenceMenuOpen ? (
                 <div className="summary-preference-menu" id="summary-preference-menu" role="menu">
+                  {showPreferenceHint ? (
+                    <div className="summary-preference-hint">
+                      <p>本次生成的笔记形式，切换到"图文笔记"后会为本次任务生成带截图的图文笔记。</p>
+                      <button
+                        className="summary-preference-hint-close"
+                        type="button"
+                        aria-label="知道了"
+                        onClick={dismissPreferenceHint}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="summary-preference-group">
                     <span className="summary-preference-label">笔记形式</span>
                     <label className={`summary-preference-option ${summaryPreference.noteMode === "text" ? "is-selected" : ""}`}>
@@ -164,7 +196,7 @@ export function HomePage({
                         type="radio"
                         name="summary-note-mode"
                         checked={summaryPreference.noteMode === "text"}
-                        onChange={() => updateSummaryPreference({ ...summaryPreference, noteMode: "text" })}
+                        onChange={() => { updateSummaryPreference({ ...summaryPreference, noteMode: "text" }); dismissPreferenceHint(); }}
                       />
                       <span>文字笔记</span>
                     </label>
@@ -173,7 +205,7 @@ export function HomePage({
                         type="radio"
                         name="summary-note-mode"
                         checked={summaryPreference.noteMode === "visual"}
-                        onChange={() => updateSummaryPreference({ ...summaryPreference, noteMode: "visual" })}
+                        onChange={() => { updateSummaryPreference({ ...summaryPreference, noteMode: "visual" }); dismissPreferenceHint(); }}
                       />
                       <span>图文笔记</span>
                     </label>
@@ -183,7 +215,7 @@ export function HomePage({
                     <input
                       type="checkbox"
                       checked={summaryPreference.generateMindmap}
-                      onChange={(event) => updateSummaryPreference({ ...summaryPreference, generateMindmap: event.target.checked })}
+                      onChange={(event) => { updateSummaryPreference({ ...summaryPreference, generateMindmap: event.target.checked }); dismissPreferenceHint(); }}
                     />
                     <span>生成导图</span>
                   </label>

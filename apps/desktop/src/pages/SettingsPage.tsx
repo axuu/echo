@@ -67,6 +67,7 @@ type SettingsPageProps = {
   onDownloadUpdate(): Promise<unknown>;
   onInstallUpdate(): Promise<void>;
   onOpenUpdateDialog(): void;
+  onOpenSetupAssistant(): void;
 };
 
 const TASK_LIST_LIMIT = 60;
@@ -220,6 +221,7 @@ export function SettingsPage({
   onDownloadUpdate,
   onInstallUpdate,
   onOpenUpdateDialog,
+  onOpenSetupAssistant,
 }: SettingsPageProps) {
   const [form, setForm] = useState<ServiceSettings | null>(() => maskConfiguredApiKeys(snapshot.settings));
   const [environment, setEnvironment] = useState<EnvironmentInfo | null>(snapshot.environment);
@@ -1742,6 +1744,49 @@ export function SettingsPage({
                   />
                   <span className="settings-input-caption">服务端口号，默认 3838</span>
                 </label>
+              </div>
+            </section>
+          )}
+          {activeCategory === "maintenance" && (
+            <section className="settings-category-section">
+              <header className="settings-category-header">
+                <h2>界面重置</h2>
+                <p>重置首次使用引导等界面提示，方便再次查看。</p>
+              </header>
+              <div className="settings-form-group">
+                <div className="settings-reset-row">
+                  <div className="settings-reset-row-copy">
+                    <span className="settings-input-label">首页引导</span>
+                    <span className="settings-input-caption">清空「首次进入首页」的引导记录，下次进入首页时会重新显示功能指引。</span>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => {
+                      window.localStorage.removeItem("bilisum.homeTourSeen");
+                      window.localStorage.removeItem("bilisum.summaryPreferenceHintSeen");
+                      setSaveStatus("已清空首页引导记录，下次进入首页将重新显示。");
+                    }}
+                  >
+                    重新显示
+                  </button>
+                </div>
+                <div className="settings-reset-row">
+                  <div className="settings-reset-row-copy">
+                    <span className="settings-input-label">配置引导</span>
+                    <span className="settings-input-caption">重新打开首次配置引导助手，可逐步补全运行所需配置。</span>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => {
+                      onOpenSetupAssistant();
+                      setSaveStatus("已打开配置引导。");
+                    }}
+                  >
+                    打开配置引导
+                  </button>
+                </div>
               </div>
             </section>
           )}

@@ -264,7 +264,7 @@ export const api = {
   getVideoTasks(videoId: string) {
     return fetchJson<TaskSummary[]>(`/api/v1/videos/${videoId}/tasks`);
   },
-  createVideoTask(videoId: string, payload?: { page_number?: number | null }) {
+  createVideoTask(videoId: string, payload?: { page_number?: number | null; visual_note_mode?: string | null }) {
     return fetchJson<TaskDetail>(`/api/v1/videos/${videoId}/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

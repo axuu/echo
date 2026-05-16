@@ -1925,7 +1925,8 @@ export function VideoDetailPage({ onRefresh, onOpenCookieSettings, onOpenCookieT
                                 setActionMenuOpen(false);
                                 setActionMenuSection(null);
                                 setStatus("正在重新转写并生成摘要...");
-                                await api.createVideoTask(video.video_id, { page_number: effectivePageNumber });
+                                const visualNoteMode = loadKnowledgeNoteViewMode() === "visual" ? "frame_insert" : "text";
+                                await api.createVideoTask(video.video_id, { page_number: effectivePageNumber, visual_note_mode: visualNoteMode });
                                 await refreshDetail({ preferredTaskId: null, syncLibrary: true });
                                 setStatus("已开始新的转写摘要任务");
                               }}

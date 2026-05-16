@@ -19,6 +19,7 @@ class ResummaryRequest(BaseModel):
 
 class VideoTaskCreateRequest(BaseModel):
     page_number: int | None = None
+    visual_note_mode: str | None = None
 
 
 class VideoTaskBatchRequest(BaseModel):

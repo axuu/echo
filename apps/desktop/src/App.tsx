@@ -22,6 +22,7 @@ import { SetupAssistantDialog } from "./components/SetupAssistantDialog";
 import { StartupAnnouncementDialog, type StartupAnnouncement } from "./components/StartupAnnouncementDialog";
 import { TitleBar } from "./components/TitleBar";
 import { UpdateDialog, type UpdateInfo } from "./components/UpdateDialog";
+import { HomeTour, isHomeTourSeen } from "./components/HomeTour";
 import { HomePage } from "./pages/HomePage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { LibraryPage } from "./pages/LibraryPage";
@@ -80,6 +81,14 @@ export function App() {
   const [setupAssistantOpen, setSetupAssistantOpen] = useState(false);
   const [cookieHelpDialogOpen, setCookieHelpDialogOpen] = useState(false);
   const [setupAssistantDismissed, setSetupAssistantDismissed] = useState(false);
+  const setupAssistantForceRef = useRef(false);
+  const [homeTourOpen, setHomeTourOpen] = useState(() => !isHomeTourSeen());
+
+  useEffect(() => {
+    if (location.pathname === "/" && !isHomeTourSeen()) {
+      setHomeTourOpen(true);
+    }
+  }, [location.pathname]);
   const [updateState, setUpdateState] = useState<UpdateState>({
     status: "idle",
     version: "",
@@ -426,16 +435,20 @@ export function App() {
   useEffect(() => {
     const shouldOpen = shouldShowSetupAssistant(configHealth, snapshot.settings);
     if (!shouldOpen) {
-      setSetupAssistantOpen(false);
-      setSetupAssistantDismissed(false);
+      if (!setupAssistantForceRef.current) {
+        setSetupAssistantOpen(false);
+      }
       return;
     }
+    setupAssistantForceRef.current = false;
+    setSetupAssistantDismissed(false);
     if (!setupAssistantDismissed) {
       setSetupAssistantOpen(true);
     }
   }, [configHealth, setupAssistantDismissed, snapshot.settings]);
 
   function navigateToConfigIssue(issueKey: string) {
+    setupAssistantForceRef.current = false;
     setSetupAssistantOpen(false);
     setSetupAssistantDismissed(true);
     setSettingsFocusRequest({ issueKey, nonce: Date.now() });
@@ -456,6 +469,7 @@ export function App() {
   }
 
   function closeSetupAssistant() {
+    setupAssistantForceRef.current = false;
     setSetupAssistantOpen(false);
     setSetupAssistantDismissed(true);
   }
@@ -525,6 +539,17 @@ export function App() {
     }
   }
 
+  function resolveVisualNoteModeFromPreference(): string | null {
+    try {
+      const rawValue = window.localStorage.getItem("bilisum.summaryPreference");
+      if (!rawValue) return null;
+      const parsed = JSON.parse(rawValue) as { noteMode?: unknown };
+      return parsed.noteMode === "visual" ? "frame_insert" : "text";
+    } catch {
+      return null;
+    }
+  }
+
   async function handleProbe(event: FormEvent) {
     event.preventDefault();
     if (!probeUrl.trim()) {
@@ -552,7 +577,7 @@ export function App() {
         setSubmitStatus(`检测到 ${response.pages.length} 个分 P，请先勾选要处理的内容`);
         return;
       }
-      await api.createVideoTask(response.video.video_id);
+      await api.createVideoTask(response.video.video_id, { visual_note_mode: resolveVisualNoteModeFromPreference() });
       setSubmitStatus(response.cached ? "已从视频库读取并开始总结" : "视频已加入本地库并开始总结");
       setProbeUrl("");
       setRefreshSeed((value) => value + 1);
@@ -589,7 +614,7 @@ export function App() {
       try {
         const response = await api.probeVideo({ url: filePath, force_refresh: false });
         setProbePreview(response.video);
-        await api.createVideoTask(response.video.video_id);
+        await api.createVideoTask(response.video.video_id, { visual_note_mode: resolveVisualNoteModeFromPreference() });
         setProbeUrl("");
         setSubmitStatus(response.cached ? "已从本地视频库读取并开始总结" : "本地视频已加入视频库并开始总结");
         setRefreshSeed((value) => value + 1);
@@ -619,7 +644,7 @@ export function App() {
     try {
       const response = await api.uploadLocalVideo(file);
       setProbePreview(response.video);
-      await api.createVideoTask(response.video.video_id);
+      await api.createVideoTask(response.video.video_id, { visual_note_mode: resolveVisualNoteModeFromPreference() });
       setProbeUrl("");
       setSubmitStatus(response.cached ? "已从本地视频库读取并开始总结" : "本地视频已加入视频库并开始总结");
       setRefreshSeed((value) => value + 1);
@@ -894,6 +919,12 @@ export function App() {
                     onCheckUpdate={handleCheckForUpdates}
                     onDownloadUpdate={handleDownloadUpdate}
                     onInstallUpdate={handleInstallUpdate}
+                    onOpenSetupAssistant={() => {
+                      setupAssistantForceRef.current = true;
+                      setSetupAssistantDismissed(false);
+                      setSetupAssistantOpen(true);
+                      navigate("/");
+                    }}
                     onRefresh={() => setRefreshSeed((value) => value + 1)}
                     onSettingsSaved={(settings, environment) => {
                       setSnapshot((current) => ({
@@ -946,6 +977,7 @@ export function App() {
       />
       <SetupAssistantDialog
         isOpen={setupAssistantOpen}
+        force={setupAssistantForceRef.current}
         configHealth={configHealth}
         onClose={closeSetupAssistant}
         onOpenSettings={openSettingsFromAssistant}
@@ -958,6 +990,9 @@ export function App() {
         onOpenSettings={openYtdlpCookieSettings}
         onCaptureLoginCookies={captureBilibiliLoginCookies}
       />
+      {homeTourOpen && location.pathname === "/" && !configHealth.hasBlockingIssues ? (
+        <HomeTour onClose={() => setHomeTourOpen(false)} />
+      ) : null}
     </div>
   );
 }

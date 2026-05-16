@@ -352,6 +352,11 @@ class TaskWorker:
             return False
         if not hasattr(self._pipeline_runner, "build_and_export_visual_evidence"):
             return False
+        task_mode = getattr(record.task_input.options, "visual_note_mode", None)
+        if task_mode is not None:
+            if normalize_visual_note_mode(task_mode) == "text":
+                return False
+            return bool(result.artifacts.get("summary_path") and result.timeline and result.knowledge_note_markdown.strip())
         settings = getattr(self._pipeline_runner, "_settings", None)
         mode = normalize_visual_note_mode(getattr(settings, "visual_note_mode", "frame_insert"), default="frame_insert")
         if mode == "text":
@@ -410,7 +415,12 @@ class TaskWorker:
         if record.result.visual_note_status == "ready" and not force:
             return
 
-        normalized_mode = normalize_visual_note_mode(mode or getattr(getattr(self._pipeline_runner, "_settings", None), "visual_note_mode", "frame_insert"), default="frame_insert")
+        normalized_mode = normalize_visual_note_mode(
+            mode
+            or getattr(record.task_input.options, "visual_note_mode", None)
+            or getattr(getattr(self._pipeline_runner, "_settings", None), "visual_note_mode", "frame_insert"),
+            default="frame_insert",
+        )
         if normalized_mode == "text":
             normalized_mode = "frame_insert"
         current_result = record.result.model_copy(

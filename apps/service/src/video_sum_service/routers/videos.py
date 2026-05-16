@@ -267,6 +267,7 @@ def _create_video_task_record(
     task_store: SqliteTaskRepository,
     video: VideoAssetRecord,
     page_number: int | None = None,
+    visual_note_mode: str | None = None,
 ):
     page = resolve_video_page(video, page_number)
     if video.pages and page_number is not None and page is None:
@@ -275,17 +276,21 @@ def _create_video_task_record(
     source_url = page.source_url if page else video.source_url
     title = page.title if page else video.title
     logger.info(
-        "create video task video_id=%s page=%s title=%s source=%s",
+        "create video task video_id=%s page=%s title=%s source=%s visual_note_mode=%s",
         video.video_id,
         page.page if page else None,
         title,
         source_url,
+        visual_note_mode,
     )
     input_type = InputType.URL
     if str(video.platform or "").lower() == "local":
         input_type = infer_local_input_type(source_url)
+    task_input = TaskInput(input_type=input_type, source=source_url, title=title, platform_hint=video.platform)
+    if visual_note_mode is not None:
+        task_input.options.visual_note_mode = visual_note_mode
     record = task_store.create_task(
-        TaskInput(input_type=input_type, source=source_url, title=title, platform_hint=video.platform),
+        task_input,
         video_id=video.video_id,
         page_number=page.page if page else None,
         page_title=title,
@@ -533,6 +538,7 @@ def create_video_task(
         task_store=task_store,
         video=video,
         page_number=request_body.page_number if request_body else None,
+        visual_note_mode=request_body.visual_note_mode if request_body else None,
     )
     return refreshed.to_detail()
 

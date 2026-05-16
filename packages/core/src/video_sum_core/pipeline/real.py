@@ -2633,7 +2633,13 @@ P 数索引：
         emit: Callable[[str, int, str, dict[str, object] | None], None],
     ) -> TaskResult:
         mode = self._visual_note_mode()
-        if not self._settings.visual_evidence_enabled or mode == "text":
+        task_mode = getattr(task_input.options, "visual_note_mode", None)
+        task_explicitly_requests_visual = False
+        if task_mode is not None:
+            mode = normalize_visual_note_mode(task_mode)
+            task_explicitly_requests_visual = mode != "text"
+        visual_enabled = self._settings.visual_evidence_enabled or task_explicitly_requests_visual
+        if not visual_enabled or mode == "text":
             return result.model_copy(update={"visual_note_mode": mode})
         if not result.knowledge_note_markdown.strip():
             return result.model_copy(
