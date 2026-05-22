@@ -18,6 +18,8 @@ from video_sum_infra.config import (
     LEGACY_SUMMARY_USER_PROMPT_TEMPLATE,
     PREVIOUS_DEFAULT_SUMMARY_SYSTEM_PROMPT,
     PREVIOUS_DEFAULT_SUMMARY_USER_PROMPT_TEMPLATE,
+    PREVIOUS_DEFAULT_VISUAL_FRAME_PLANNING_PROMPT,
+    PREVIOUS_DEFAULT_VISUAL_VLM_PROMPT,
     ServiceSettings,
     recommend_mindmap_concurrency,
     recommend_task_concurrency,
@@ -155,7 +157,11 @@ class SettingsManager:
                 stored["visual_note_user_prompt_template"] = DEFAULT_VISUAL_NOTE_USER_PROMPT_TEMPLATE
             if "visual_frame_planning_prompt" not in stored:
                 stored["visual_frame_planning_prompt"] = DEFAULT_VISUAL_FRAME_PLANNING_PROMPT
+            if stored.get("visual_frame_planning_prompt") == PREVIOUS_DEFAULT_VISUAL_FRAME_PLANNING_PROMPT:
+                stored["visual_frame_planning_prompt"] = DEFAULT_VISUAL_FRAME_PLANNING_PROMPT
             if "visual_vlm_prompt" not in stored:
+                stored["visual_vlm_prompt"] = DEFAULT_VISUAL_VLM_PROMPT
+            if stored.get("visual_vlm_prompt") == PREVIOUS_DEFAULT_VISUAL_VLM_PROMPT:
                 stored["visual_vlm_prompt"] = DEFAULT_VISUAL_VLM_PROMPT
             migrated = False
             candidate = ServiceSettings.model_validate({**self._base_settings.model_dump(), **stored})

@@ -1163,6 +1163,92 @@ def test_visual_keyframe_plan_prefers_llm_selected_timestamps(tmp_path: Path, mo
     assert json.loads(plan_path.read_text(encoding="utf-8"))["planner"] == "llm"
 
 
+def test_visual_frame_planning_prompt_renders_default_variables(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = RealPipelineRunner(
+        PipelineSettings(
+            tasks_dir=tmp_path,
+            visual_note_mode="frame_insert",
+            llm_enabled=True,
+            llm_api_key="key",
+            llm_base_url="https://llm.example/v1",
+            llm_model="test-model",
+            visual_evidence_max_frames=4,
+        )
+    )
+    captured_prompt = ""
+
+    def fake_request(*, base_url, payload, timeout, retry_count):
+        nonlocal captured_prompt
+        captured_prompt = str(payload["messages"][1]["content"])
+        return {
+            "keyframes": [
+                {
+                    "timestamp_seconds": 12.0,
+                    "anchor_heading": "关键设置",
+                    "concept": "配置界面",
+                    "reason": "解释设置入口",
+                    "caption_hint": "设置入口",
+                    "note_hint": "截图展示入口",
+                    "priority": 0.9,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(runner, "_request_llm_json", fake_request)
+
+    plan = runner._build_visual_keyframe_plan_with_llm(
+        "视频",
+        TaskResult(
+            overview="概览",
+            knowledge_note_markdown="# 关键设置\n\n正文",
+            timeline=[{"title": "关键设置", "start": 12.0, "summary": "章节摘要"}],
+        ),
+        "frame_insert",
+    )
+
+    assert plan["planner"] == "llm"
+    assert "{max_frames}" not in captured_prompt
+    assert "最多选择 4 张" in captured_prompt
+    assert '"start": 12.0' in captured_prompt
+
+
+def test_visual_keyframe_plan_accepts_legacy_frames_schema(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = RealPipelineRunner(
+        PipelineSettings(
+            tasks_dir=tmp_path,
+            visual_note_mode="frame_insert",
+            llm_enabled=True,
+            llm_api_key="key",
+            llm_base_url="https://llm.example/v1",
+            llm_model="test-model",
+        )
+    )
+    monkeypatch.setattr(
+        runner,
+        "_request_llm_json",
+        lambda *args, **kwargs: {
+            "frames": [
+                {
+                    "seconds": 18.0,
+                    "reason": "出现配置画面",
+                    "expected_visual_type": "settings",
+                    "importance": 4,
+                }
+            ]
+        },
+    )
+
+    plan = runner._build_visual_keyframe_plan_with_llm(
+        "视频",
+        TaskResult(knowledge_note_markdown="# 配置\n\n正文", timeline=[{"title": "配置", "start": 18.0}]),
+        "frame_insert",
+    )
+
+    assert plan["planner"] == "llm"
+    assert plan["keyframes"][0]["timestamp_seconds"] == 18.0
+    assert plan["keyframes"][0]["priority"] == 0.8
+
+
 def test_visual_note_rejects_image_gallery_model_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     runner = RealPipelineRunner(PipelineSettings(tasks_dir=tmp_path, visual_note_mode="vlm_integrated"))
     monkeypatch.setattr(runner, "_visual_llm_available", lambda: True)

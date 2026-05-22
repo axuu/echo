@@ -75,6 +75,9 @@ run("prompt templates are validated before settings save", () => {
   assert.ok(settingsPageSource.includes("{transcript}"), "summary template validation should require transcript variable");
   assert.ok(settingsPageSource.includes("knowledgeNoteMarkdown"), "knowledge note validation should preserve parseable output field");
   assert.ok(settingsPageSource.includes("{visual_observations_json}"), "visual note validation should require visual observations variable");
+  assert.ok(settingsPageSource.includes("捕获帧规划 Prompt 至少需要保留 {title} 与 {summary_json} 变量。"), "frame planning validation should not require optional max_frames");
+  assert.ok(settingsPageSource.includes("{mode}"), "frame planning help should list mode variable");
+  assert.ok(settingsPageSource.includes("{timeline_hint}"), "VLM prompt help should list timeline_hint variable");
 });
 run("prompt inline toolbar can collapse prompt groups", () => {
   assert.ok(settingsPageSource.includes("已展开 {outerSectionsOpen.size} 项"), "toolbar should show expanded prompt group count");

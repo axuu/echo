@@ -1306,18 +1306,18 @@ export function SettingsPage({
     }
 
     const visualPlanningPrompt = String(nextForm.visual_frame_planning_prompt || "");
-    if (!hasAllPromptTokens(visualPlanningPrompt, ["{title}", "{summary_json}", "{max_frames}"])) {
+    if (!hasAllPromptTokens(visualPlanningPrompt, ["{title}", "{summary_json}"])) {
       return {
-        message: "捕获帧规划 Prompt 需要保留 {title}、{summary_json}、{max_frames} 变量。",
+        message: "捕获帧规划 Prompt 至少需要保留 {title} 与 {summary_json} 变量。",
         category: "prompts",
         targetKey: "visual_frame_planning_prompt",
       };
     }
 
     const visualVlmPrompt = String(nextForm.visual_vlm_prompt || "");
-    if (!hasAllPromptTokens(visualVlmPrompt, ["{title}", "{timestamp}", "{context}"])) {
+    if (!hasAllPromptTokens(visualVlmPrompt, ["{title}", "{timestamp}"])) {
       return {
-        message: "画面理解 Prompt 需要保留 {title}、{timestamp}、{context} 变量。",
+        message: "画面理解 Prompt 至少需要保留 {title} 与 {timestamp} 变量。",
         category: "prompts",
         targetKey: "visual_vlm_prompt",
       };
@@ -3337,7 +3337,7 @@ export function SettingsPage({
                       <button className="secondary-button" type="button" onClick={undoPromptReset}>回退设置</button>
                     )}
                     <span className="settings-input-caption">
-                      可用变量：{"{title}"}、{"{summary_json}"}、{"{knowledge_note_markdown}"}、{"{segments_excerpt}"}、{"{max_frames}"}。
+                      可用变量：{"{title}"}、{"{mode}"}、{"{summary_json}"}、{"{knowledge_note_markdown}"}、{"{segments_excerpt}"}、{"{max_frames}"}。
                     </span>
                   </div>
                 </label>
@@ -3357,7 +3357,7 @@ export function SettingsPage({
                       <button className="secondary-button" type="button" onClick={undoPromptReset}>回退设置</button>
                     )}
                     <span className="settings-input-caption">
-                      可用变量：{"{title}"}、{"{timestamp}"}、{"{context}"}。
+                      可用变量：{"{title}"}、{"{timestamp}"}、{"{context}"}、{"{timeline_hint}"}、{"{knowledge_note_markdown}"}。
                     </span>
                   </div>
                 </label>

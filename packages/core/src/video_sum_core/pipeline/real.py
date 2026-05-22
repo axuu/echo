@@ -2874,6 +2874,7 @@ P 数索引：
             "chapters": result.timeline,
             "chapterGroups": result.chapter_groups,
         }
+        segments_excerpt = _truncate_text(json.dumps(result.timeline, ensure_ascii=False), 6000)
         user_template = self._settings.visual_frame_planning_prompt.strip() or (
             "请根据视频摘要和知识笔记，选择最值得截图辅助理解的关键画面。\n"
             "目标链路是：先找知识点 -> 按时间点截图 -> 让 VLM 理解图片 -> 整合成图文笔记。\n"
@@ -2890,12 +2891,14 @@ P 数索引：
                 max_frames=max_frames,
                 summary_json=_truncate_text(json.dumps(summary_payload, ensure_ascii=False), 9000),
                 knowledge_note_markdown=_truncate_text(result.knowledge_note_markdown or "", 12000),
+                segments_excerpt=segments_excerpt,
             )
         except (KeyError, IndexError, ValueError):
             user_prompt = (
                 f"{user_template}\n\n视频标题：{title}\n模式：{mode}\n摘要 JSON：\n"
                 f"{_truncate_text(json.dumps(summary_payload, ensure_ascii=False), 9000)}\n\n"
-                f"知识笔记：\n{_truncate_text(result.knowledge_note_markdown or '', 12000)}"
+                f"知识笔记：\n{_truncate_text(result.knowledge_note_markdown or '', 12000)}\n\n"
+                f"分段数据：\n{segments_excerpt}"
             )
         payload = {
             "model": self._settings.llm_model,
@@ -2932,6 +2935,38 @@ P 数索引：
                         "reason": str(item.get("reason") or "").strip()[:600],
                         "caption_hint": str(item.get("caption_hint") or item.get("concept") or "关键画面").strip()[:180],
                         "note_hint": str(item.get("note_hint") or item.get("reason") or "").strip()[:800],
+                        "priority": max(0.0, min(1.0, priority)),
+                        "mode": mode,
+                    }
+                )
+        raw_frames = parsed.get("frames")
+        if isinstance(raw_frames, list):
+            for item in raw_frames:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    timestamp = float(item.get("timestamp_seconds") or item.get("seconds") or item.get("timestamp") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if timestamp < 0:
+                    continue
+                try:
+                    raw_importance = item.get("priority") if item.get("priority") is not None else item.get("importance")
+                    priority = float(raw_importance if raw_importance is not None else 0.75)
+                    if priority > 1:
+                        priority = priority / 5
+                except (TypeError, ValueError):
+                    priority = 0.75
+                visual_type = str(item.get("expected_visual_type") or item.get("visual_type") or "").strip()
+                reason = str(item.get("reason") or "").strip()
+                keyframes.append(
+                    {
+                        "timestamp_seconds": timestamp,
+                        "anchor_heading": str(item.get("anchor_heading") or item.get("heading") or "").strip()[:160],
+                        "concept": str(item.get("concept") or item.get("caption_hint") or visual_type or "关键画面").strip()[:160],
+                        "reason": reason[:600],
+                        "caption_hint": str(item.get("caption_hint") or visual_type or item.get("concept") or "关键画面").strip()[:180],
+                        "note_hint": str(item.get("note_hint") or reason).strip()[:800],
                         "priority": max(0.0, min(1.0, priority)),
                         "mode": mode,
                     }
@@ -3235,6 +3270,7 @@ P 数索引：
                 prompt = prompt.format(
                     title=title,
                     timestamp=frame.get("timestamp"),
+                    context=timeline_hint,
                     timeline_hint=timeline_hint,
                     knowledge_note_markdown=_truncate_text(result.knowledge_note_markdown or "", 4000),
                 )
