@@ -37,6 +37,7 @@ from video_sum_service.runtime_support import (
     ensure_runtime_channel,
     ensure_runtime_pip,
     install_workspace_packages,
+    normalize_runtime_channel,
     pip_install_with_fallbacks,
     replace_task_worker,
     run_command,
@@ -250,10 +251,19 @@ def _install_workspace_packages(python_executable, runtime_channel: str) -> None
 
 def update_settings(payload: SettingsUpdatePayload) -> dict[str, object]:
     previous_settings = settings_manager.current
+    requested_runtime_channel = normalize_runtime_channel(
+        payload.runtime_channel or previous_settings.runtime_channel,
+        allow_unknown_gpu=True,
+    )
+    if payload.runtime_channel is not None:
+        payload = payload.model_copy(update={"runtime_channel": requested_runtime_channel})
+    ensure_runtime_channel(requested_runtime_channel)
+
     current_settings = settings_manager.save(payload)
-    bootstrap_managed_runtime(current_settings.runtime_channel)
-    prepend_runtime_path(current_settings.runtime_channel)
-    activate_runtime_pythonpath(current_settings.runtime_channel)
+    active_runtime_channel = normalize_runtime_channel(current_settings.runtime_channel, allow_unknown_gpu=True)
+    bootstrap_managed_runtime(active_runtime_channel)
+    prepend_runtime_path(active_runtime_channel)
+    activate_runtime_pythonpath(active_runtime_channel)
     current_settings.data_dir.mkdir(parents=True, exist_ok=True)
     current_settings.cache_dir.mkdir(parents=True, exist_ok=True)
     current_settings.tasks_dir.mkdir(parents=True, exist_ok=True)
@@ -261,7 +271,7 @@ def update_settings(payload: SettingsUpdatePayload) -> dict[str, object]:
     if runtime_channel_changed:
         clear_environment_probe_cache(previous_settings.runtime_channel)
         clear_environment_probe_cache(current_settings.runtime_channel)
-    environment = detect_environment(current_settings.runtime_channel)
+    environment = detect_environment(active_runtime_channel)
     replace_task_worker(
         app.state,
         build_worker(

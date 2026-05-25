@@ -45,10 +45,12 @@ from video_sum_service.runtime_support import (
     build_worker,
     clear_environment_probe_cache,
     detect_environment,
+    ensure_runtime_channel,
     inspect_runtime_channels,
     install_cuda_support,
     install_knowledge_dependencies,
     install_local_asr,
+    normalize_runtime_channel,
     replace_task_worker,
     serialize_settings,
     sync_all_runtime_channels,
@@ -201,7 +203,10 @@ def match_prompt_preset(payload: PromptMatchRequest) -> PromptMatchResponse:
 @router.get("/system/info")
 def system_info(request: Request, runtime_channel: str | None = None, refresh: bool = False) -> dict[str, object]:
     current_settings = settings_manager.current
-    active_channel = runtime_channel or current_settings.runtime_channel
+    active_channel = normalize_runtime_channel(
+        runtime_channel or current_settings.runtime_channel,
+        allow_unknown_gpu=True,
+    )
     runtime_startup = get_runtime_startup_state(request.app.state)
     should_probe_environment = refresh or runtime_channel is not None
     if refresh:
@@ -323,10 +328,19 @@ def get_app_update() -> dict[str, object]:
 @router.put("/settings")
 def update_settings(payload: SettingsUpdatePayload, request: Request) -> dict[str, object]:
     previous_settings = settings_manager.current
+    requested_runtime_channel = normalize_runtime_channel(
+        payload.runtime_channel or previous_settings.runtime_channel,
+        allow_unknown_gpu=True,
+    )
+    if payload.runtime_channel is not None:
+        payload = payload.model_copy(update={"runtime_channel": requested_runtime_channel})
+    ensure_runtime_channel(requested_runtime_channel)
+
     current_settings = settings_manager.save(payload)
-    bootstrap_managed_runtime(current_settings.runtime_channel)
-    prepend_runtime_path(current_settings.runtime_channel)
-    activate_runtime_pythonpath(current_settings.runtime_channel)
+    active_runtime_channel = normalize_runtime_channel(current_settings.runtime_channel, allow_unknown_gpu=True)
+    bootstrap_managed_runtime(active_runtime_channel)
+    prepend_runtime_path(active_runtime_channel)
+    activate_runtime_pythonpath(active_runtime_channel)
     current_settings.data_dir.mkdir(parents=True, exist_ok=True)
     current_settings.cache_dir.mkdir(parents=True, exist_ok=True)
     current_settings.tasks_dir.mkdir(parents=True, exist_ok=True)
@@ -335,7 +349,7 @@ def update_settings(payload: SettingsUpdatePayload, request: Request) -> dict[st
         clear_environment_probe_cache(previous_settings.runtime_channel)
         clear_environment_probe_cache(current_settings.runtime_channel)
         _clear_knowledge_service_cache(request.app.state)
-    environment = detect_environment(current_settings.runtime_channel)
+    environment = detect_environment(active_runtime_channel)
     replace_task_worker(
         request.app.state,
         build_worker(
@@ -392,7 +406,10 @@ def get_bilibili_cookies_qrcode(qrcode_key: str) -> dict[str, object]:
 
 @router.get("/environment")
 def get_environment(runtime_channel: str | None = None, refresh: bool = False) -> dict[str, object]:
-    active_channel = runtime_channel or settings_manager.current.runtime_channel
+    active_channel = normalize_runtime_channel(
+        runtime_channel or settings_manager.current.runtime_channel,
+        allow_unknown_gpu=True,
+    )
     if refresh:
         clear_environment_probe_cache(active_channel)
     return detect_environment(active_channel)
@@ -405,7 +422,8 @@ def get_runtime_status() -> dict[str, object]:
 
 @router.post("/runtime/sync")
 def post_runtime_sync(request: Request, payload: dict[str, object] | None = None) -> dict[str, object]:
-    requested_channel = str((payload or {}).get("runtime_channel") or (payload or {}).get("runtimeChannel") or "").strip()
+    requested_raw = str((payload or {}).get("runtime_channel") or (payload or {}).get("runtimeChannel") or "").strip()
+    requested_channel = normalize_runtime_channel(requested_raw, allow_unknown_gpu=True) if requested_raw else ""
     try:
         result = sync_runtime_channel(requested_channel) if requested_channel else sync_all_runtime_channels()
         _clear_knowledge_service_cache(request.app.state)

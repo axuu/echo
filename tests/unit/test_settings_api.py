@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi import HTTPException
 
 import video_sum_service.app as service_app
@@ -72,6 +73,61 @@ def test_update_settings_reuses_environment_probe(monkeypatch, tmp_path: Path) -
     assert response["saved"] is True
     assert response["settings"]["runtime_channel"] == "base"
     assert detect_calls == ["base"]
+
+
+def test_update_settings_rejects_invalid_runtime_channel(monkeypatch, tmp_path: Path) -> None:
+    previous = ServiceSettings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        tasks_dir=tmp_path / "tasks",
+        runtime_channel="base",
+    )
+    settings_manager._settings = previous
+    save_calls: list[SettingsUpdatePayload] = []
+    monkeypatch.setattr(settings_manager, "save", lambda payload: save_calls.append(payload) or previous)
+
+    with pytest.raises(HTTPException) as exc_info:
+        update_settings(SettingsUpdatePayload(runtime_channel="../outside"))
+
+    assert exc_info.value.status_code == 400
+    assert save_calls == []
+
+
+def test_update_settings_ensures_selected_runtime_channel(monkeypatch, tmp_path: Path) -> None:
+    previous = ServiceSettings(
+        data_dir=tmp_path / "data-prev",
+        cache_dir=tmp_path / "cache-prev",
+        tasks_dir=tmp_path / "tasks-prev",
+        runtime_channel="base",
+    )
+    current = ServiceSettings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        tasks_dir=tmp_path / "tasks",
+        runtime_channel="gpu-cu128",
+    )
+    settings_manager._settings = previous
+    app.state.task_repository = object()
+    ensure_calls: list[str] = []
+
+    monkeypatch.setattr(settings_manager, "save", lambda payload: current)
+    monkeypatch.setattr("video_sum_service.app.ensure_runtime_channel", lambda runtime_channel: ensure_calls.append(runtime_channel) or tmp_path / runtime_channel)
+    monkeypatch.setattr("video_sum_service.app.bootstrap_managed_runtime", lambda runtime_channel: None)
+    monkeypatch.setattr("video_sum_service.app.prepend_runtime_path", lambda runtime_channel: None)
+    monkeypatch.setattr("video_sum_service.app.activate_runtime_pythonpath", lambda runtime_channel: None)
+    monkeypatch.setattr(
+        "video_sum_service.app.detect_environment",
+        lambda runtime_channel=None: {"cudaAvailable": False, "runtimeChannel": runtime_channel or "base"},
+    )
+    monkeypatch.setattr(
+        "video_sum_service.app.build_worker",
+        lambda repository, current_settings, environment_info=None: object(),
+    )
+
+    response = update_settings(SettingsUpdatePayload(runtime_channel="gpu-cu128"))
+
+    assert response["saved"] is True
+    assert ensure_calls == ["gpu-cu128"]
 
 
 def test_serialize_settings_includes_persisted_file_flag(monkeypatch, tmp_path: Path) -> None:
@@ -866,6 +922,391 @@ def test_ensure_runtime_channel_syncs_base_preserves_macos_runtime(
     assert metadata["localAsrInstalled"] is True
 
 
+def test_ensure_runtime_channel_restores_gpu_runtime_when_sync_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    base_site_packages = base_dir / "Lib" / "site-packages"
+    gpu_site_packages = gpu_dir / "Lib" / "site-packages"
+    base_site_packages.mkdir(parents=True)
+    gpu_site_packages.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("base-python", encoding="utf-8")
+    (gpu_dir / "python.exe").write_text("gpu-python", encoding="utf-8")
+    (base_site_packages / "video_sum_service").mkdir()
+    (base_site_packages / "video_sum_service" / "__init__.py").write_text("new", encoding="utf-8")
+    (gpu_site_packages / "video_sum_service").mkdir()
+    (gpu_site_packages / "video_sum_service" / "__init__.py").write_text("old", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"base","runtimeLayout":"portable-cpython",'
+            '"appVersion":"2.0.0","pythonVersion":"3.12.0"}'
+        ),
+        encoding="utf-8",
+    )
+    (gpu_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"gpu-cu128","runtimeLayout":"portable-cpython",'
+            '"appVersion":"1.0.0","pythonVersion":"3.12.0","cudaVariant":"cu128",'
+            '"localAsrInstalled":true}'
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "bootstrap_managed_runtime",
+        lambda runtime_channel: base_dir if runtime_channel == "base" else None,
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    original_copy_runtime_item = runtime_support.copy_runtime_item
+
+    def failing_copy_runtime_item(source: Path, target: Path) -> None:
+        if source.name == "video_sum_service":
+            raise OSError("sync failed")
+        original_copy_runtime_item(source, target)
+
+    monkeypatch.setattr(runtime_support, "copy_runtime_item", failing_copy_runtime_item)
+
+    with pytest.raises(OSError, match="sync failed"):
+        runtime_support.ensure_runtime_channel("gpu-cu128")
+
+    assert (gpu_dir / "python.exe").read_text(encoding="utf-8") == "gpu-python"
+    assert (gpu_site_packages / "video_sum_service" / "__init__.py").read_text(encoding="utf-8") == "old"
+    assert runtime_support.read_runtime_metadata(gpu_dir)["appVersion"] == "1.0.0"
+    assert not (runtime_root / ".gpu-cu128-refresh-backup").exists()
+
+
+def test_ensure_runtime_channel_does_not_restore_partial_gpu_backup(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    backup_dir = runtime_root / ".gpu-cu128-refresh-backup"
+    backup_temp_dir = runtime_root / "..gpu-cu128-refresh-backup-temp"
+    base_dir.mkdir(parents=True)
+    gpu_dir.mkdir(parents=True)
+    backup_temp_dir.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("base-python", encoding="utf-8")
+    (gpu_dir / "python.exe").write_text("gpu-python", encoding="utf-8")
+    (backup_temp_dir / "python.exe").write_text("partial-backup-python", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"base","runtimeLayout":"portable-cpython",'
+            '"appVersion":"2.0.0","pythonVersion":"3.12.0"}'
+        ),
+        encoding="utf-8",
+    )
+    (gpu_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"gpu-cu128","runtimeLayout":"portable-cpython",'
+            '"appVersion":"1.0.0","pythonVersion":"3.12.0"}'
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "bootstrap_managed_runtime",
+        lambda runtime_channel: base_dir if runtime_channel == "base" else None,
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    original_copytree = runtime_support.shutil.copytree
+
+    def failing_copytree(source, destination, *args, **kwargs):
+        if Path(destination) == backup_temp_dir:
+            backup_temp_dir.mkdir(parents=True, exist_ok=True)
+            (backup_temp_dir / "leftover.txt").write_text("partial", encoding="utf-8")
+            raise OSError("backup failed")
+        return original_copytree(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(runtime_support.shutil, "copytree", failing_copytree)
+
+    with pytest.raises(OSError, match="backup failed"):
+        runtime_support.ensure_runtime_channel("gpu-cu128")
+
+    assert (gpu_dir / "python.exe").read_text(encoding="utf-8") == "gpu-python"
+    assert not backup_dir.exists()
+    assert not backup_temp_dir.exists()
+
+    monkeypatch.setattr(runtime_support.shutil, "copytree", original_copytree)
+    assert runtime_support.ensure_runtime_channel("gpu-cu128") == gpu_dir
+    assert (gpu_dir / "python.exe").read_text(encoding="utf-8") == "base-python"
+    assert not (gpu_dir / "leftover.txt").exists()
+
+
+def test_ensure_runtime_channel_restores_interrupted_gpu_refresh(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    backup_dir = runtime_root / ".gpu-cu128-refresh-backup"
+    base_dir.mkdir(parents=True)
+    gpu_dir.mkdir(parents=True)
+    backup_dir.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("base-python", encoding="utf-8")
+    (gpu_dir / "python.exe").write_text("partial-python", encoding="utf-8")
+    (backup_dir / "python.exe").write_text("backup-python", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"base","runtimeLayout":"portable-cpython",'
+            '"appVersion":"2.0.0","pythonVersion":"3.12.0"}'
+        ),
+        encoding="utf-8",
+    )
+    (backup_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"gpu-cu128","runtimeLayout":"portable-cpython",'
+            '"appVersion":"2.0.0","pythonVersion":"3.12.0","cudaVariant":"cu128"}'
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "bootstrap_managed_runtime",
+        lambda runtime_channel: base_dir if runtime_channel == "base" else None,
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    assert runtime_support.ensure_runtime_channel("gpu-cu128") == gpu_dir
+
+    assert (gpu_dir / "python.exe").read_text(encoding="utf-8") == "backup-python"
+    assert not backup_dir.exists()
+
+
+def test_ensure_runtime_channel_restores_not_ready_gpu_runtime_when_copy_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    base_dir.mkdir(parents=True)
+    gpu_dir.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("base-python", encoding="utf-8")
+    (gpu_dir / "user-package.txt").write_text("keep me", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"base","runtimeLayout":"portable-cpython",'
+            '"appVersion":"2.0.0","pythonVersion":"3.12.0"}'
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "bootstrap_managed_runtime",
+        lambda runtime_channel: base_dir if runtime_channel == "base" else None,
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    original_copytree = runtime_support.shutil.copytree
+
+    def failing_copytree(source, destination, *args, **kwargs):
+        if Path(source) == base_dir:
+            raise OSError("copy failed")
+        return original_copytree(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(runtime_support.shutil, "copytree", failing_copytree)
+
+    with pytest.raises(OSError, match="copy failed"):
+        runtime_support.ensure_runtime_channel("gpu-cu128")
+
+    assert (gpu_dir / "user-package.txt").read_text(encoding="utf-8") == "keep me"
+    assert not (runtime_root / ".gpu-cu128-refresh-backup").exists()
+
+
+def test_ensure_runtime_channel_syncs_base_preserves_extension_dependency_closure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    base_site_packages = base_dir / "Lib" / "site-packages"
+    gpu_site_packages = gpu_dir / "Lib" / "site-packages"
+    base_site_packages.mkdir(parents=True)
+    gpu_site_packages.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("base-python", encoding="utf-8")
+    (gpu_dir / "python.exe").write_text("gpu-python", encoding="utf-8")
+    (base_site_packages / "chromadb").mkdir()
+    (base_site_packages / "chromadb" / "__init__.py").write_text("base chroma", encoding="utf-8")
+    (base_site_packages / "numpy").mkdir()
+    (base_site_packages / "numpy" / "__init__.py").write_text("base numpy", encoding="utf-8")
+    (base_site_packages / "numpy-2.0.0.dist-info").mkdir()
+    (base_site_packages / "numpy-2.0.0.dist-info" / "METADATA").write_text(
+        "Name: numpy\n",
+        encoding="utf-8",
+    )
+    (base_site_packages / "pydantic").mkdir()
+    (base_site_packages / "pydantic" / "__init__.py").write_text("base pydantic", encoding="utf-8")
+    (gpu_site_packages / "chromadb").mkdir()
+    (gpu_site_packages / "chromadb" / "__init__.py").write_text("gpu chroma", encoding="utf-8")
+    (gpu_site_packages / "chromadb-1.0.0.dist-info").mkdir()
+    (gpu_site_packages / "chromadb-1.0.0.dist-info" / "METADATA").write_text(
+        "Name: chromadb\nRequires-Dist: numpy>=1.26\nRequires-Dist: helper-extra[fast] (>=1); python_version >= '3.12'\n",
+        encoding="utf-8",
+    )
+    (gpu_site_packages / "numpy").mkdir()
+    (gpu_site_packages / "numpy" / "__init__.py").write_text("gpu numpy", encoding="utf-8")
+    (gpu_site_packages / "numpy-1.26.0.dist-info").mkdir()
+    (gpu_site_packages / "numpy-1.26.0.dist-info" / "METADATA").write_text(
+        "Name: numpy\n",
+        encoding="utf-8",
+    )
+    (gpu_site_packages / "pydantic").mkdir()
+    (gpu_site_packages / "pydantic" / "__init__.py").write_text("old pydantic", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"base","runtimeLayout":"portable-cpython",'
+            '"appVersion":"2.0.0","pythonVersion":"3.12.0"}'
+        ),
+        encoding="utf-8",
+    )
+    (gpu_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"gpu-cu128","runtimeLayout":"portable-cpython",'
+            '"appVersion":"1.0.0","pythonVersion":"3.12.0","cudaVariant":"cu128"}'
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "bootstrap_managed_runtime",
+        lambda runtime_channel: base_dir if runtime_channel == "base" else None,
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    runtime_support.ensure_runtime_channel("gpu-cu128")
+
+    assert (gpu_site_packages / "chromadb" / "__init__.py").read_text(encoding="utf-8") == "gpu chroma"
+    assert (gpu_site_packages / "numpy" / "__init__.py").read_text(encoding="utf-8") == "gpu numpy"
+    assert (gpu_site_packages / "numpy-1.26.0.dist-info").exists()
+    assert not (gpu_site_packages / "numpy-2.0.0.dist-info").exists()
+    assert (gpu_site_packages / "pydantic" / "__init__.py").read_text(encoding="utf-8") == "base pydantic"
+
+
+def test_ensure_runtime_channel_syncs_base_preserves_extension_top_level_packages(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    base_site_packages = base_dir / "Lib" / "site-packages"
+    gpu_site_packages = gpu_dir / "Lib" / "site-packages"
+    base_site_packages.mkdir(parents=True)
+    gpu_site_packages.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("base-python", encoding="utf-8")
+    (gpu_dir / "python.exe").write_text("gpu-python", encoding="utf-8")
+    (base_site_packages / "chromadb").mkdir()
+    (base_site_packages / "chromadb" / "__init__.py").write_text("base chroma", encoding="utf-8")
+    (base_site_packages / "PIL").mkdir()
+    (base_site_packages / "PIL" / "__init__.py").write_text("base pillow", encoding="utf-8")
+    (base_site_packages / "Pillow-11.0.0.dist-info").mkdir()
+    (base_site_packages / "Pillow-11.0.0.dist-info" / "METADATA").write_text(
+        "Name: Pillow\n",
+        encoding="utf-8",
+    )
+    (gpu_site_packages / "chromadb").mkdir()
+    (gpu_site_packages / "chromadb" / "__init__.py").write_text("gpu chroma", encoding="utf-8")
+    (gpu_site_packages / "chromadb-1.0.0.dist-info").mkdir()
+    (gpu_site_packages / "chromadb-1.0.0.dist-info" / "METADATA").write_text(
+        "Name: chromadb\nRequires-Dist: Pillow>=10\n",
+        encoding="utf-8",
+    )
+    (gpu_site_packages / "PIL").mkdir()
+    (gpu_site_packages / "PIL" / "__init__.py").write_text("gpu pillow", encoding="utf-8")
+    (gpu_site_packages / "Pillow-10.0.0.dist-info").mkdir()
+    (gpu_site_packages / "Pillow-10.0.0.dist-info" / "METADATA").write_text(
+        "Name: Pillow\n",
+        encoding="utf-8",
+    )
+    (gpu_site_packages / "Pillow-10.0.0.dist-info" / "top_level.txt").write_text(
+        "PIL\n",
+        encoding="utf-8",
+    )
+    (base_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"base","runtimeLayout":"portable-cpython",'
+            '"appVersion":"2.0.0","pythonVersion":"3.12.0"}'
+        ),
+        encoding="utf-8",
+    )
+    (gpu_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"gpu-cu128","runtimeLayout":"portable-cpython",'
+            '"appVersion":"1.0.0","pythonVersion":"3.12.0","cudaVariant":"cu128"}'
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "bootstrap_managed_runtime",
+        lambda runtime_channel: base_dir if runtime_channel == "base" else None,
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    runtime_support.ensure_runtime_channel("gpu-cu128")
+
+    assert (gpu_site_packages / "PIL" / "__init__.py").read_text(encoding="utf-8") == "gpu pillow"
+    assert (gpu_site_packages / "Pillow-10.0.0.dist-info").exists()
+    assert not (gpu_site_packages / "Pillow-11.0.0.dist-info").exists()
+
+
 def test_inspect_runtime_channels_reports_outdated_runtime(monkeypatch, tmp_path: Path) -> None:
     runtime_root = tmp_path / "runtime"
     base_dir = runtime_root / "base"
@@ -905,6 +1346,316 @@ def test_inspect_runtime_channels_reports_outdated_runtime(monkeypatch, tmp_path
     assert gpu_status["cudaVariant"] == "cu128"
     assert [item["label"] for item in payload["pipIndexes"]] == ["official", "tsinghua", "aliyun"]
     assert bootstrap_calls == []
+
+
+def test_inspect_runtime_channels_ignores_backup_and_temp_dirs(monkeypatch, tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    backup_dir = runtime_root / ".gpu-cu128-refresh-backup"
+    temp_dir = runtime_root / ".gpu-cu128-refresh-temp"
+    unrelated_dir = runtime_root / "notes"
+    for directory in (base_dir, gpu_dir, backup_dir, temp_dir, unrelated_dir):
+        directory.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("", encoding="utf-8")
+    (gpu_dir / "python.exe").write_text("", encoding="utf-8")
+    (backup_dir / "python.exe").write_text("", encoding="utf-8")
+    (temp_dir / "python.exe").write_text("", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        '{"runtimeLayout":"portable-cpython","appVersion":"2.0.0"}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(runtime_support, "managed_runtime_root", lambda: runtime_root)
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    payload = runtime_support.inspect_runtime_channels()
+    channels = {channel["runtimeChannel"] for channel in payload["channels"]}
+
+    assert "gpu-cu128" in channels
+    assert ".gpu-cu128-refresh-backup" not in channels
+    assert ".gpu-cu128-refresh-temp" not in channels
+    assert "notes" not in channels
+
+
+def test_sync_runtime_channel_rejects_invalid_runtime_channel() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        runtime_support.sync_runtime_channel("../outside")
+
+    assert exc_info.value.status_code == 400
+
+
+def test_inspect_runtime_channels_prefers_cached_environment_probe(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    cache_dir = tmp_path / "cache"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    base_dir.mkdir(parents=True)
+    gpu_dir.mkdir(parents=True)
+    cache_dir.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("", encoding="utf-8")
+    (gpu_dir / "python.exe").write_text("", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        '{"runtimeLayout":"portable-cpython","appVersion":"2.0.0","pythonVersion":"3.12.0"}',
+        encoding="utf-8",
+    )
+    (gpu_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeLayout":"portable-cpython","appVersion":"2.0.0","pythonVersion":"3.12.0",'
+            '"localAsrInstalled":true,"knowledgeDependenciesReady":true}'
+        ),
+        encoding="utf-8",
+    )
+    (cache_dir / "environment-probe-cache.json").write_text(
+        """
+        {
+          "gpu-cu128": {
+            "runtimeChannel": "gpu-cu128",
+            "runtimeReady": true,
+            "runtimePython": "%s",
+            "runtimePath": "%s",
+            "appVersion": "2.0.0",
+            "runtimeLayout": "portable-cpython",
+            "pythonVersion": "3.12.0",
+            "localAsrInstalled": false,
+            "knowledgeDependenciesReady": false
+          }
+        }
+        """
+        % (
+            str(gpu_dir / "python.exe").replace("\\", "\\\\"),
+            str(gpu_dir).replace("\\", "\\\\"),
+        ),
+        encoding="utf-8",
+    )
+    runtime_support._environment_probe_cache.clear()
+    current = ServiceSettings(cache_dir=cache_dir, runtime_channel="gpu-cu128")
+
+    monkeypatch.setattr(runtime_support.settings_manager, "_settings", current)
+    monkeypatch.setattr(runtime_support, "managed_runtime_root", lambda: runtime_root)
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    payload = runtime_support.inspect_runtime_channels()
+    gpu_status = next(
+        channel for channel in payload["channels"] if channel["runtimeChannel"] == "gpu-cu128"
+    )
+
+    assert gpu_status["localAsrInstalled"] is False
+    assert gpu_status["knowledgeDependenciesReady"] is False
+    assert gpu_status["environmentStatusSource"] == "probe-cache"
+
+
+def test_inspect_runtime_channels_ignores_stale_cached_environment_probe(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    cache_dir = tmp_path / "cache"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    base_dir.mkdir(parents=True)
+    gpu_dir.mkdir(parents=True)
+    cache_dir.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("", encoding="utf-8")
+    (gpu_dir / "python.exe").write_text("", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        '{"runtimeLayout":"portable-cpython","appVersion":"2.0.0","pythonVersion":"3.12.0"}',
+        encoding="utf-8",
+    )
+    (gpu_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeLayout":"portable-cpython","appVersion":"2.0.0","pythonVersion":"3.12.0",'
+            '"localAsrInstalled":true,"knowledgeDependenciesReady":true}'
+        ),
+        encoding="utf-8",
+    )
+    (cache_dir / "environment-probe-cache.json").write_text(
+        """
+        {
+          "gpu-cu128": {
+            "runtimeChannel": "gpu-cu128",
+            "runtimeReady": true,
+            "runtimePython": "%s",
+            "runtimePath": "%s",
+            "appVersion": "2.0.0",
+            "runtimeLayout": "portable-cpython",
+            "pythonVersion": "3.12.0",
+            "localAsrInstalled": false,
+            "knowledgeDependenciesReady": false
+          }
+        }
+        """
+        % (
+            str(runtime_root / "old-gpu-cu128" / "python.exe").replace("\\", "\\\\"),
+            str(gpu_dir).replace("\\", "\\\\"),
+        ),
+        encoding="utf-8",
+    )
+    runtime_support._environment_probe_cache.clear()
+    current = ServiceSettings(cache_dir=cache_dir, runtime_channel="gpu-cu128")
+
+    monkeypatch.setattr(runtime_support.settings_manager, "_settings", current)
+    monkeypatch.setattr(runtime_support, "managed_runtime_root", lambda: runtime_root)
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    payload = runtime_support.inspect_runtime_channels()
+    gpu_status = next(
+        channel for channel in payload["channels"] if channel["runtimeChannel"] == "gpu-cu128"
+    )
+
+    assert gpu_status["localAsrInstalled"] is True
+    assert gpu_status["knowledgeDependenciesReady"] is True
+    assert gpu_status["environmentStatusSource"] == "metadata"
+
+
+def test_inspect_runtime_channels_ignores_cache_when_runtime_metadata_changes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    cache_dir = tmp_path / "cache"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    base_dir.mkdir(parents=True)
+    gpu_dir.mkdir(parents=True)
+    cache_dir.mkdir(parents=True)
+    (base_dir / "python.exe").write_text("", encoding="utf-8")
+    (gpu_dir / "python.exe").write_text("", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        '{"runtimeLayout":"portable-cpython","appVersion":"2.0.0","pythonVersion":"3.12.0"}',
+        encoding="utf-8",
+    )
+    (gpu_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeLayout":"portable-cpython","appVersion":"2.0.0","pythonVersion":"3.12.0",'
+            '"localAsrInstalled":true,"knowledgeDependenciesReady":true}'
+        ),
+        encoding="utf-8",
+    )
+    (cache_dir / "environment-probe-cache.json").write_text(
+        """
+        {
+          "gpu-cu128": {
+            "runtimeChannel": "gpu-cu128",
+            "runtimeReady": true,
+            "runtimePython": "%s",
+            "runtimePath": "%s",
+            "appVersion": "1.0.0",
+            "runtimeLayout": "portable-cpython",
+            "pythonVersion": "3.12.0",
+            "localAsrInstalled": false,
+            "knowledgeDependenciesReady": false
+          }
+        }
+        """
+        % (
+            str(gpu_dir / "python.exe").replace("\\", "\\\\"),
+            str(gpu_dir).replace("\\", "\\\\"),
+        ),
+        encoding="utf-8",
+    )
+    runtime_support._environment_probe_cache.clear()
+    current = ServiceSettings(cache_dir=cache_dir, runtime_channel="gpu-cu128")
+
+    monkeypatch.setattr(runtime_support.settings_manager, "_settings", current)
+    monkeypatch.setattr(runtime_support, "managed_runtime_root", lambda: runtime_root)
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+
+    payload = runtime_support.inspect_runtime_channels()
+    gpu_status = next(
+        channel for channel in payload["channels"] if channel["runtimeChannel"] == "gpu-cu128"
+    )
+
+    assert gpu_status["localAsrInstalled"] is True
+    assert gpu_status["knowledgeDependenciesReady"] is True
+    assert gpu_status["environmentStatusSource"] == "metadata"
+
+
+def test_detect_environment_ignores_false_cache_after_runtime_recovers(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    cache_dir = tmp_path / "cache"
+    gpu_dir = runtime_root / "gpu-cu128"
+    gpu_dir.mkdir(parents=True)
+    cache_dir.mkdir(parents=True)
+    (gpu_dir / "python.exe").write_text("", encoding="utf-8")
+    (cache_dir / "environment-probe-cache.json").write_text(
+        """
+        {
+          "gpu-cu128": {
+            "runtimeChannel": "gpu-cu128",
+            "runtimeReady": false,
+            "runtimePython": "",
+            "localAsrInstalled": false,
+            "knowledgeDependenciesReady": false
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    runtime_support._environment_probe_cache.clear()
+    current = ServiceSettings(cache_dir=cache_dir, runtime_channel="gpu-cu128")
+    run_calls: list[list[str]] = []
+
+    monkeypatch.setattr(runtime_support.settings_manager, "_settings", current)
+    monkeypatch.setattr(runtime_support, "managed_runtime_dir", lambda channel: runtime_root / channel)
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda channel: runtime_root / channel / "python.exe"
+        if (runtime_root / channel / "python.exe").exists()
+        else None,
+    )
+    monkeypatch.setattr(runtime_support, "uses_current_service_python", lambda runtime_channel: False)
+
+    def fake_run_command(command, runtime_channel, timeout=120):
+        run_calls.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"pythonVersion":"3.12.0","torchInstalled":false,"torchVersion":"","cudaAvailable":false,"gpuName":"","ytDlpVersion":"ok","localAsrInstalled":false,"localAsrAvailable":false,"localAsrVersion":"","chromadbInstalled":false,"chromadbVersion":"","sentenceTransformersInstalled":false,"sentenceTransformersVersion":"","knowledgeDependenciesReady":false,"ffmpegLocation":"","recommendedModel":"base","recommendedDevice":"cpu"}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(runtime_support, "run_command", fake_run_command)
+
+    environment = runtime_support.detect_environment("gpu-cu128")
+
+    assert environment["runtimeReady"] is True
+    assert run_calls
 
 
 def test_torch_install_with_fallbacks_accepts_custom_cuda_index(monkeypatch, tmp_path: Path) -> None:

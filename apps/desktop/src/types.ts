@@ -317,15 +317,19 @@ export type RuntimeChannelStatus = {
   runtimeLayout: string;
   targetAppVersion: string;
   targetRuntimeLayout: string;
+  pythonVersion: string;
+  targetPythonVersion: string;
   needsUpdate: boolean;
   cudaVariant: string;
   localAsrInstalled: boolean;
   knowledgeDependenciesReady: boolean;
+  environmentStatusSource?: "probe-cache" | "metadata";
 };
 
 export type RuntimeStatus = {
   baseAppVersion: string;
   baseRuntimeLayout: string;
+  basePythonVersion?: string;
   pipIndexes: Array<{ label: string; url: string }>;
   channels: RuntimeChannelStatus[];
 };

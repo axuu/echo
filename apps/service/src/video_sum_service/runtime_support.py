@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from email.parser import Parser
 import importlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -76,6 +78,8 @@ _RUNTIME_EXTENSION_PACKAGE_KEYS: set[str] = {
 _RUNTIME_ROOT_APP_DIRS: frozenset[str] = frozenset({"Lib", "lib", "Scripts", "bin", "DLLs", "stdlib"})
 _RUNTIME_ROOT_APP_FILES: frozenset[str] = frozenset({"pythonpath.pth"})
 _RUNTIME_ROOT_STALE_FILES: frozenset[str] = frozenset({"pyvenv.cfg"})
+_RUNTIME_REQUIREMENT_NAME_PATTERN = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9_.-]*)")
+_RUNTIME_CHANNEL_PATTERN = re.compile(r"^(base|gpu-cu\d+)$")
 
 
 def _split_env_urls(raw_value: str | None) -> list[str]:
@@ -90,6 +94,27 @@ def _torch_index_candidates(cuda_variant: str) -> list[tuple[str, str]]:
     for index, url in enumerate(_split_env_urls(os.environ.get("VIDEO_SUM_TORCH_INDEX_URLS")), start=1):
         candidates.append((f"custom-{index}", url))
     return candidates
+
+
+def normalize_runtime_channel(runtime_channel: str | None, *, allow_unknown_gpu: bool = False) -> str:
+    normalized = str(runtime_channel or "base").strip().lower()
+    if not normalized or normalized == "default":
+        return "base"
+    if normalized in _KNOWN_RUNTIME_CHANNELS:
+        return normalized
+    if allow_unknown_gpu and _RUNTIME_CHANNEL_PATTERN.fullmatch(normalized):
+        return normalized
+    raise HTTPException(status_code=400, detail="Unsupported runtime channel.")
+
+
+def runtime_channel_is_discoverable(runtime_channel: str) -> bool:
+    if runtime_channel.startswith("."):
+        return False
+    try:
+        normalize_runtime_channel(runtime_channel, allow_unknown_gpu=True)
+    except HTTPException:
+        return False
+    return True
 
 
 def windows_hidden_subprocess_kwargs() -> dict[str, object]:
@@ -235,7 +260,10 @@ def _write_environment_probe_cache_file(payload: dict[str, object]) -> None:
 def _load_cached_environment_probe(runtime_channel: str) -> dict[str, object] | None:
     cached = _environment_probe_cache.get(runtime_channel)
     if cached is not None:
-        return dict(cached)
+        if _cached_environment_probe_usable(runtime_channel, cached):
+            return dict(cached)
+        _environment_probe_cache.pop(runtime_channel, None)
+        return None
 
     cache_file = _read_environment_probe_cache_file()
     entry = cache_file.get(runtime_channel)
@@ -243,11 +271,89 @@ def _load_cached_environment_probe(runtime_channel: str) -> dict[str, object] | 
         return None
     if str(entry.get("runtimeChannel") or runtime_channel) != runtime_channel:
         return None
-    if entry.get("runtimeReady") and not uses_current_service_python(runtime_channel):
-        if runtime_python_executable(runtime_channel) is None:
-            return None
+    if not _cached_environment_probe_usable(runtime_channel, entry):
+        return None
     _environment_probe_cache[runtime_channel] = dict(entry)
     return dict(entry)
+
+
+def _cached_environment_probe_usable(runtime_channel: str, entry: dict[str, object]) -> bool:
+    if str(entry.get("runtimeChannel") or runtime_channel) != runtime_channel:
+        return False
+    if uses_current_service_python(runtime_channel):
+        return True
+    python_executable = runtime_python_executable(runtime_channel)
+    if not entry.get("runtimeReady"):
+        return python_executable is None
+    if python_executable is None:
+        return False
+    cached_python = str(entry.get("runtimePython") or "")
+    if cached_python and not runtime_paths_match(Path(cached_python), python_executable):
+        return False
+    metadata = read_runtime_metadata(managed_runtime_dir(runtime_channel))
+    if not runtime_probe_cache_metadata_matches(entry, metadata):
+        return False
+    cached_runtime_path = str(entry.get("runtimePath") or "")
+    return not cached_runtime_path or runtime_paths_match(Path(cached_runtime_path), managed_runtime_dir(runtime_channel))
+
+
+def _load_cached_environment_probe_for_runtime_status(
+    runtime_channel: str,
+    runtime_dir: Path,
+    python_executable: Path | None,
+    metadata: dict[str, object],
+) -> dict[str, object] | None:
+    entry = _load_cached_environment_probe(runtime_channel)
+    if entry is None:
+        return None
+    cached_python = str(entry.get("runtimePython") or "")
+    if cached_python and python_executable is not None:
+        if not runtime_paths_match(Path(cached_python), python_executable):
+            return None
+    cached_app_version = str(entry.get("appVersion") or "")
+    if cached_app_version and cached_app_version != str(metadata.get("appVersion") or ""):
+        return None
+    cached_python_version = str(entry.get("runtimePythonVersion") or entry.get("pythonVersion") or "")
+    metadata_python_version = str(metadata.get("pythonVersion") or "")
+    if cached_python_version and metadata_python_version and cached_python_version != metadata_python_version:
+        return None
+    cached_runtime_path = str(entry.get("runtimePath") or "")
+    if cached_runtime_path:
+        if not runtime_paths_match(Path(cached_runtime_path), runtime_dir):
+            return None
+    return entry
+
+
+def runtime_probe_cache_metadata_matches(entry: dict[str, object], metadata: dict[str, object]) -> bool:
+    if not metadata:
+        return True
+    for field in ("appVersion", "runtimeLayout", "pythonVersion"):
+        cached_value = str(entry.get(field) or "")
+        metadata_value = str(metadata.get(field) or "")
+        if not cached_value:
+            return False
+        if metadata_value and cached_value != metadata_value:
+            return False
+    return True
+
+
+def runtime_cache_metadata_fields(runtime_channel: str, runtime_dir: Path | None = None) -> dict[str, str]:
+    if runtime_channel == "base" and uses_current_service_python(runtime_channel):
+        return {}
+    metadata = read_runtime_metadata(runtime_dir or managed_runtime_dir(runtime_channel))
+    return {
+        "runtimePath": str(runtime_dir or managed_runtime_dir(runtime_channel)),
+        "appVersion": str(metadata.get("appVersion") or ""),
+        "runtimeLayout": str(metadata.get("runtimeLayout") or ""),
+        "pythonVersion": str(metadata.get("pythonVersion") or ""),
+    }
+
+
+def runtime_paths_match(left: Path, right: Path) -> bool:
+    try:
+        return left.resolve() == right.resolve()
+    except OSError:
+        return str(left) == str(right)
 
 
 def _store_cached_environment_probe(runtime_channel: str, payload: dict[str, object]) -> None:
@@ -437,6 +543,7 @@ def install_workspace_packages(python_executable: Path, runtime_channel: str) ->
 
 
 def create_source_runtime(runtime_channel: str) -> Path:
+    runtime_channel = normalize_runtime_channel(runtime_channel, allow_unknown_gpu=True)
     runtime_dir = managed_runtime_dir(runtime_channel)
     venv.EnvBuilder(with_pip=True, clear=True).create(runtime_dir)
     python_executable = next((candidate for candidate in runtime_python_candidates(runtime_dir) if candidate.exists()), None)
@@ -447,6 +554,7 @@ def create_source_runtime(runtime_channel: str) -> Path:
 
 
 def ensure_runtime_channel(runtime_channel: str) -> Path | None:
+    runtime_channel = normalize_runtime_channel(runtime_channel, allow_unknown_gpu=True)
     if runtime_channel == "base":
         bootstrap_managed_runtime("base")
         python_executable = runtime_python_executable("base")
@@ -457,6 +565,9 @@ def ensure_runtime_channel(runtime_channel: str) -> Path | None:
         raise HTTPException(status_code=500, detail="Bundled base runtime is missing.")
 
     target_dir = managed_runtime_dir(runtime_channel)
+    backup_dir = runtime_refresh_backup_dir(runtime_channel)
+    restore_interrupted_runtime_refresh(target_dir, backup_dir)
+
     base_dir = ensure_runtime_channel("base")
     if base_dir is None or not base_dir.exists():
         raise HTTPException(status_code=500, detail="Base runtime is unavailable.")
@@ -469,21 +580,98 @@ def ensure_runtime_channel(runtime_channel: str) -> Path | None:
         return target_dir
 
     if target_ready and target_dir.exists():
-        sync_runtime_base(target_dir, base_dir, runtime_channel)
+        run_runtime_refresh_with_backup(
+            target_dir,
+            backup_dir,
+            lambda: sync_runtime_base(target_dir, base_dir, runtime_channel),
+        )
         return target_dir
 
-    if target_dir.exists():
-        shutil.rmtree(target_dir)
-
-    shutil.copytree(base_dir, target_dir, dirs_exist_ok=True)
+    replace_runtime_with_base_copy(target_dir, base_dir, runtime_channel, backup_dir)
     return target_dir
+
+
+def runtime_refresh_backup_dir(runtime_channel: str) -> Path:
+    runtime_channel = normalize_runtime_channel(runtime_channel, allow_unknown_gpu=True)
+    return managed_runtime_dir(runtime_channel).parent / f".{runtime_channel}-refresh-backup"
+
+
+def restore_interrupted_runtime_refresh(runtime_dir: Path, backup_dir: Path) -> None:
+    if not backup_dir.exists():
+        return
+    if runtime_dir.exists():
+        shutil.rmtree(runtime_dir)
+    shutil.move(str(backup_dir), str(runtime_dir))
+
+
+def run_runtime_refresh_with_backup(runtime_dir: Path, backup_dir: Path, refresh) -> None:
+    prepare_runtime_refresh_backup(runtime_dir, backup_dir)
+    try:
+        refresh()
+    except Exception:
+        if runtime_dir.exists():
+            shutil.rmtree(runtime_dir)
+        shutil.move(str(backup_dir), str(runtime_dir))
+        raise
+    else:
+        shutil.rmtree(backup_dir, ignore_errors=True)
+
+
+def prepare_runtime_refresh_backup(runtime_dir: Path, backup_dir: Path) -> None:
+    backup_temp_dir = backup_dir.parent / f".{backup_dir.name}-temp"
+    if backup_dir.exists():
+        shutil.rmtree(backup_dir)
+    if backup_temp_dir.exists():
+        shutil.rmtree(backup_temp_dir)
+    try:
+        shutil.copytree(runtime_dir, backup_temp_dir)
+        shutil.move(str(backup_temp_dir), str(backup_dir))
+    except Exception:
+        if backup_temp_dir.exists():
+            shutil.rmtree(backup_temp_dir, ignore_errors=True)
+        raise
+
+
+def replace_runtime_with_base_copy(
+    target_dir: Path,
+    base_dir: Path,
+    runtime_channel: str,
+    backup_dir: Path,
+) -> None:
+    temp_dir = target_dir.parent / f".{runtime_channel}-refresh-temp"
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    if target_dir.exists():
+        prepare_runtime_refresh_backup(target_dir, backup_dir)
+    try:
+        shutil.copytree(base_dir, temp_dir)
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        shutil.move(str(temp_dir), str(target_dir))
+    except Exception:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        if backup_dir.exists():
+            if target_dir.exists():
+                shutil.rmtree(target_dir)
+            shutil.move(str(backup_dir), str(target_dir))
+        elif target_dir.exists() and runtime_python_executable(runtime_channel) is None:
+            shutil.rmtree(target_dir, ignore_errors=True)
+        raise
+    else:
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir, ignore_errors=True)
 
 
 def inspect_runtime_channels() -> dict[str, object]:
     root = managed_runtime_root()
     discovered = set(_KNOWN_RUNTIME_CHANNELS)
     if root.exists():
-        discovered.update(item.name for item in root.iterdir() if item.is_dir())
+        discovered.update(
+            item.name
+            for item in root.iterdir()
+            if item.is_dir() and runtime_channel_is_discoverable(item.name)
+        )
 
     base_dir = managed_runtime_dir("base")
     base_metadata = read_runtime_metadata(base_dir)
@@ -500,6 +688,27 @@ def inspect_runtime_channels() -> dict[str, object]:
         ready = python_executable is not None
         app_version = str(metadata.get("appVersion") or "")
         layout = str(metadata.get("runtimeLayout") or "")
+        cached_environment = (
+            _load_cached_environment_probe_for_runtime_status(
+                runtime_channel,
+                runtime_dir,
+                python_executable,
+                metadata,
+            )
+            if exists
+            else None
+        )
+        environment_status_source = "probe-cache" if cached_environment is not None else "metadata"
+        local_asr_installed = bool(
+            cached_environment.get("localAsrInstalled")
+            if cached_environment is not None
+            else metadata.get("localAsrInstalled")
+        )
+        knowledge_dependencies_ready = bool(
+            cached_environment.get("knowledgeDependenciesReady")
+            if cached_environment is not None
+            else metadata.get("knowledgeDependenciesReady")
+        )
         needs_update = bool(
             exists
             and runtime_channel != "base"
@@ -521,8 +730,9 @@ def inspect_runtime_channels() -> dict[str, object]:
                 "targetPythonVersion": base_python_version,
                 "needsUpdate": needs_update,
                 "cudaVariant": str(metadata.get("cudaVariant") or ""),
-                "localAsrInstalled": bool(metadata.get("localAsrInstalled")),
-                "knowledgeDependenciesReady": bool(metadata.get("knowledgeDependenciesReady")),
+                "localAsrInstalled": local_asr_installed,
+                "knowledgeDependenciesReady": knowledge_dependencies_ready,
+                "environmentStatusSource": environment_status_source,
             }
         )
 
@@ -536,6 +746,7 @@ def inspect_runtime_channels() -> dict[str, object]:
 
 
 def sync_runtime_channel(runtime_channel: str) -> dict[str, object]:
+    runtime_channel = normalize_runtime_channel(runtime_channel, allow_unknown_gpu=True)
     if runtime_channel == "base":
         runtime_dir = ensure_runtime_channel("base")
     else:
@@ -658,16 +869,131 @@ def sync_runtime_site_packages(
     base_site_packages: Path,
 ) -> None:
     target_site_packages.mkdir(parents=True, exist_ok=True)
+    protected_package_keys = runtime_protected_site_package_keys(target_site_packages)
     for item in base_site_packages.iterdir():
-        if runtime_site_package_item_protected(item):
+        if runtime_site_package_item_protected(item, protected_package_keys):
             continue
         remove_matching_dist_info(target_site_packages, item)
         copy_runtime_item(item, target_site_packages / item.name)
 
 
-def runtime_site_package_item_protected(item: Path) -> bool:
+def runtime_site_package_item_protected(
+    item: Path,
+    protected_package_keys: set[str] | None = None,
+) -> bool:
     package_key = runtime_site_package_key(item)
+    if protected_package_keys is not None:
+        return package_key in protected_package_keys
+    return runtime_site_package_key_is_extension(package_key)
+
+
+def runtime_site_package_key_is_extension(package_key: str) -> bool:
     return package_key in _RUNTIME_EXTENSION_PACKAGE_KEYS or package_key.startswith("nvidia_")
+
+
+def runtime_protected_site_package_keys(target_site_packages: Path) -> set[str]:
+    if not target_site_packages.exists():
+        return set()
+    installed_package_keys = {
+        runtime_site_package_key(item)
+        for item in target_site_packages.iterdir()
+        if item.name != "__pycache__"
+    }
+    protected_package_keys = {
+        key for key in installed_package_keys if runtime_site_package_key_is_extension(key)
+    }
+    if not protected_package_keys:
+        return set()
+
+    requirements_by_package, package_aliases = runtime_distribution_dependency_graph(target_site_packages)
+    pending = list(protected_package_keys)
+    while pending:
+        package_key = pending.pop()
+        related_keys = package_aliases.get(package_key, {package_key})
+        dependency_keys = set().union(
+            *(requirements_by_package.get(related_key, set()) for related_key in related_keys)
+        )
+        for dependency_key in set().union(*(package_aliases.get(key, {key}) for key in dependency_keys)):
+            if dependency_key not in installed_package_keys or dependency_key in protected_package_keys:
+                continue
+            protected_package_keys.add(dependency_key)
+            pending.append(dependency_key)
+    return protected_package_keys
+
+
+def runtime_distribution_dependency_graph(site_packages: Path) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    requirements_by_package: dict[str, set[str]] = {}
+    package_aliases: dict[str, set[str]] = {}
+    for item in list(site_packages.glob("*.dist-info")) + list(site_packages.glob("*.egg-info")):
+        metadata_path = runtime_distribution_metadata_path(item)
+        if metadata_path is None:
+            continue
+        try:
+            metadata = Parser().parsestr(metadata_path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        package_keys = {runtime_site_package_key(item)}
+        metadata_name = metadata.get("Name")
+        if metadata_name:
+            package_keys.add(runtime_normalize_package_key(metadata_name))
+        package_keys.update(runtime_distribution_top_level_keys(item))
+        for package_key in package_keys:
+            package_aliases.setdefault(package_key, set()).update(package_keys)
+        dependencies = {
+            dependency_key
+            for raw_requirement in metadata.get_all("Requires-Dist", [])
+            if (dependency_key := runtime_requirement_package_key(raw_requirement))
+        }
+        for package_key in package_keys:
+            requirements_by_package.setdefault(package_key, set()).update(dependencies)
+    return requirements_by_package, package_aliases
+
+
+def runtime_distribution_top_level_keys(distribution_path: Path) -> set[str]:
+    keys: set[str] = set()
+    if not distribution_path.is_dir():
+        return keys
+    top_level_path = distribution_path / "top_level.txt"
+    if top_level_path.exists():
+        try:
+            keys.update(
+                runtime_normalize_package_key(line.strip())
+                for line in top_level_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            )
+        except OSError:
+            pass
+    record_path = distribution_path / "RECORD"
+    if record_path.exists():
+        try:
+            for line in record_path.read_text(encoding="utf-8").splitlines():
+                top_level = line.split(",", 1)[0].replace("\\", "/").split("/", 1)[0].strip()
+                if top_level and not top_level.endswith((".dist-info", ".egg-info")):
+                    keys.add(runtime_site_package_key(Path(top_level)))
+        except OSError:
+            pass
+    return keys
+
+
+def runtime_distribution_metadata_path(distribution_path: Path) -> Path | None:
+    if distribution_path.is_file():
+        return distribution_path
+    for filename in ("METADATA", "PKG-INFO"):
+        candidate = distribution_path / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def runtime_requirement_package_key(raw_requirement: str) -> str:
+    match = _RUNTIME_REQUIREMENT_NAME_PATTERN.match(raw_requirement)
+    if match is None:
+        return ""
+    return runtime_normalize_package_key(match.group(1))
+
+
+def runtime_normalize_package_key(package_name: str) -> str:
+    return re.sub(r"[-_.]+", "_", package_name).lower()
 
 
 def runtime_site_package_key(item: Path) -> str:
@@ -680,7 +1006,7 @@ def runtime_site_package_key(item: Path) -> str:
         parts = name.split("-")
         version_index = next((index for index, part in enumerate(parts) if part[:1].isdigit()), len(parts))
         name = "-".join(parts[:version_index]) or parts[0]
-    return name.replace("-", "_").lower()
+    return runtime_normalize_package_key(name)
 
 
 def remove_matching_dist_info(target_site_packages: Path, source: Path) -> None:
@@ -705,7 +1031,10 @@ def copy_runtime_item(source: Path, target: Path) -> None:
 
 
 def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
-    active_channel = runtime_channel or settings_manager.current.runtime_channel
+    active_channel = normalize_runtime_channel(
+        runtime_channel or settings_manager.current.runtime_channel,
+        allow_unknown_gpu=True,
+    )
     cached = _load_cached_environment_probe(active_channel)
     if cached is not None:
         return dict(cached)
@@ -847,6 +1176,7 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
             ),
             "runtimePython": str(python_executable),
             "ffmpegLocation": str(ffmpeg_location() or ""),
+            **runtime_cache_metadata_fields(active_channel, managed_runtime_dir(active_channel)),
         }
     )
     payload["localAsrInstalled"] = bool(payload.get("localAsrInstalled"))
@@ -872,6 +1202,7 @@ def clear_environment_probe_cache(runtime_channel: str | None = None) -> None:
         except OSError:
             logger.warning("failed to remove environment probe cache path=%s", path)
         return
+    runtime_channel = normalize_runtime_channel(runtime_channel, allow_unknown_gpu=True)
     _environment_probe_cache.pop(runtime_channel, None)
     _environment_probe_failures.pop(runtime_channel, None)
     cache_file = _read_environment_probe_cache_file()
@@ -889,7 +1220,7 @@ def build_worker(
 
     from video_sum_service.worker import TaskWorker
 
-    selected_runtime_channel = current_settings.runtime_channel
+    selected_runtime_channel = normalize_runtime_channel(current_settings.runtime_channel, allow_unknown_gpu=True)
     if selected_runtime_channel != "base" and runtime_python_executable(selected_runtime_channel) is None:
         logger.warning("runtime channel %s is not ready, falling back to base", selected_runtime_channel)
         selected_runtime_channel = "base"
@@ -1133,7 +1464,7 @@ def install_cuda_support(cuda_variant: str, repository: SqliteTaskRepository) ->
 
 def install_local_asr(reinstall: bool, repository: SqliteTaskRepository) -> tuple[dict[str, object], TaskWorker]:
     current_settings = settings_manager.current
-    runtime_channel = current_settings.runtime_channel
+    runtime_channel = normalize_runtime_channel(current_settings.runtime_channel, allow_unknown_gpu=True)
     runtime_dir = ensure_runtime_channel(runtime_channel)
     python_executable = runtime_python_executable(runtime_channel)
     if runtime_dir is None or python_executable is None:
@@ -1183,7 +1514,7 @@ def install_knowledge_dependencies(
     repository: SqliteTaskRepository,
 ) -> tuple[dict[str, object], TaskWorker]:
     current_settings = settings_manager.current
-    runtime_channel = current_settings.runtime_channel
+    runtime_channel = normalize_runtime_channel(current_settings.runtime_channel, allow_unknown_gpu=True)
     use_current_python = uses_current_service_python(runtime_channel)
     if use_current_python:
         runtime_dir = repo_root()
