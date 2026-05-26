@@ -729,6 +729,11 @@ export function SettingsPage({
       }
       const status = await api.getRuntimeStatus();
       setRuntimeStatus(status);
+      if (form?.runtime_channel) {
+        const nextEnvironment = await api.getEnvironment({ runtimeChannel: form.runtime_channel, refresh: true });
+        setEnvironment(nextEnvironment);
+        onSettingsSaved(form, nextEnvironment);
+      }
       const outdatedCount = status.channels.filter((channel) => channel.needsUpdate).length;
       if (!options.silent) {
         setRuntimeStatusMessage(outdatedCount > 0 ? `${outdatedCount} 个运行环境需要同步基础版本。` : "所有已安装运行环境均为最新基础版本。");
@@ -1433,7 +1438,10 @@ export function SettingsPage({
       setKnowledgeDepsInstalling(true);
       setKnowledgeDepsStatus("正在安装知识库依赖...");
       setKnowledgeDepsOutput("");
-      const response = await api.installKnowledgeDependencies();
+      const response = await api.installKnowledgeDependencies({
+        runtime_channel: form.runtime_channel,
+        reinstall: Boolean(knowledgeDepsReady),
+      });
       setKnowledgeDepsStatus(response.installed ? "知识库依赖已安装并完成检测" : "知识库依赖安装后仍未完全就绪");
       setKnowledgeDepsOutput(response.stdoutTail || "");
       const nextEnvironment = response.environment || (await api.getEnvironment({ runtimeChannel: form.runtime_channel, refresh: true }));

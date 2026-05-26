@@ -141,7 +141,7 @@ def test_bootstrap_base_runtime_refresh_preserves_user_installed_packages(monkey
     assert (runtime_site_packages / "sentence_transformers" / "__init__.py").read_text(encoding="utf-8") == "user st"
 
 
-def test_bootstrap_base_runtime_refresh_does_not_preserve_packaging_metadata(monkeypatch, tmp_path: Path) -> None:
+def test_bootstrap_base_runtime_refresh_preserves_pip_tooling(monkeypatch, tmp_path: Path) -> None:
     seed_dir = tmp_path / "app" / "runtime" / "base"
     runtime_dir = tmp_path / "data" / "runtime" / "base"
     seed_site_packages = seed_dir / "Lib" / "site-packages"
@@ -175,10 +175,41 @@ def test_bootstrap_base_runtime_refresh_does_not_preserve_packaging_metadata(mon
 
     assert bootstrap_managed_runtime("base") == runtime_dir
 
-    assert not (runtime_site_packages / "pip").exists()
-    assert not (runtime_site_packages / "pip-25.0.1.dist-info").exists()
-    assert not (runtime_site_packages / "setuptools-75.8.0.dist-info").exists()
-    assert not (runtime_site_packages / "wheel-0.45.1.dist-info").exists()
+    assert (runtime_site_packages / "pip").exists()
+    assert (runtime_site_packages / "pip-25.0.1.dist-info").exists()
+    assert (runtime_site_packages / "setuptools-75.8.0.dist-info").exists()
+    assert (runtime_site_packages / "wheel-0.45.1.dist-info").exists()
+
+
+def test_bootstrap_base_runtime_refreshes_when_seed_python_version_changes(monkeypatch, tmp_path: Path) -> None:
+    seed_dir = tmp_path / "app" / "runtime" / "base"
+    runtime_dir = tmp_path / "data" / "runtime" / "base"
+    (seed_dir / "Lib" / "site-packages").mkdir(parents=True)
+    (runtime_dir / "Lib" / "site-packages").mkdir(parents=True)
+    (seed_dir / "python.exe").write_text("seed-python", encoding="utf-8")
+    (runtime_dir / "python.exe").write_text("old-python", encoding="utf-8")
+    (seed_dir / "video_sum_runtime.json").write_text(
+        '{"appVersion":"1.17.0","runtimeLayout":"portable-cpython","pythonVersion":"3.12.8"}',
+        encoding="utf-8",
+    )
+    (runtime_dir / "video_sum_runtime.json").write_text(
+        '{"appVersion":"1.17.0","runtimeLayout":"portable-cpython","pythonVersion":"3.12.0"}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(runtime_module, "is_frozen", lambda: True)
+    monkeypatch.setattr(runtime_module, "bundled_runtime_seed_dir", lambda: seed_dir)
+    monkeypatch.setattr(runtime_module, "runtime_seed_available", lambda: True)
+    monkeypatch.setattr(runtime_module, "managed_runtime_dir", lambda runtime_channel: runtime_dir)
+    monkeypatch.setattr(
+        runtime_module,
+        "runtime_python_executable",
+        lambda runtime_channel: runtime_dir / "python.exe" if (runtime_dir / "python.exe").exists() else None,
+    )
+
+    assert bootstrap_managed_runtime("base") == runtime_dir
+
+    assert (runtime_dir / "python.exe").read_text(encoding="utf-8") == "seed-python"
 
 
 def test_bootstrap_base_runtime_refresh_restores_previous_runtime_when_copy_fails(monkeypatch, tmp_path: Path) -> None:

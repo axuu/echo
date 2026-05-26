@@ -210,6 +210,15 @@ try {
         if (-not (Test-Path $backendExe)) {
             throw "Packaged backend was not produced: $backendExe"
         }
+
+        $runtimePython = Join-Path $repoRoot "build\pyinstaller\runtime\base\python.exe"
+        if (-not (Test-Path $runtimePython)) {
+            throw "Packaged managed runtime Python was not produced: $runtimePython"
+        }
+        & $runtimePython -m pip --version *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Packaged managed runtime pip is unavailable after relocation."
+        }
     }
     else {
         Write-Host "SkipPrebuild enabled: reusing existing renderer and backend artifacts."

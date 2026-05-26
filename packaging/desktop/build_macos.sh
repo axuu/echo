@@ -2,14 +2,18 @@
 set -euo pipefail
 
 skip_prebuild=0
+mac_arch_arg=""
 for arg in "$@"; do
   case "$arg" in
     --skip-prebuild)
       skip_prebuild=1
       ;;
+    --x64|--arm64|--universal)
+      mac_arch_arg="$arg"
+      ;;
     *)
       echo "Unknown argument: $arg" >&2
-      echo "Usage: build_macos.sh [--skip-prebuild]" >&2
+      echo "Usage: build_macos.sh [--skip-prebuild] [--x64|--arm64|--universal]" >&2
       exit 2
       ;;
   esac
@@ -35,6 +39,19 @@ case "$machine_arch" in
     ;;
   *)
     echo "Unsupported macOS build architecture: $machine_arch" >&2
+    exit 1
+    ;;
+esac
+if [[ -n "$mac_arch_arg" ]]; then
+  electron_builder_arch="$mac_arch_arg"
+fi
+
+case "$electron_builder_arch:$machine_arch" in
+  --x64:x86_64|--arm64:arm64|--universal:*)
+    ;;
+  *)
+    echo "Requested Electron arch $electron_builder_arch does not match native backend build architecture $machine_arch." >&2
+    echo "Run the x64 package on an Intel runner and the arm64 package on an Apple Silicon runner." >&2
     exit 1
     ;;
 esac
@@ -123,6 +140,8 @@ if [[ "$skip_prebuild" -eq 0 ]]; then
   )"
   env -u PYTHONHOME -u PYTHONEXECUTABLE -u __PYVENV_LAUNCHER__ PYTHONPATH="${runtime_probe_pythonpath%:}" \
     "$runtime_probe_python" -c "import encodings, sqlite3, ssl, sys, video_sum_core; print(sys.executable)"
+  env -u PYTHONHOME -u PYTHONEXECUTABLE -u __PYVENV_LAUNCHER__ PYTHONPATH="${runtime_probe_pythonpath%:}" \
+    "$runtime_probe_python" -m pip --version >/dev/null
 else
   echo "SkipPrebuild enabled: reusing existing renderer and backend artifacts."
 fi

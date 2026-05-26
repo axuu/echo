@@ -342,10 +342,15 @@ def install_local_asr(reinstall: bool = False) -> dict[str, object]:
     }
 
 
-def install_knowledge_dependencies(reinstall: bool = False) -> dict[str, object]:
-    result, worker = install_knowledge_dependencies_with_worker(reinstall=reinstall, repository=app.state.task_repository)
-    replace_task_worker(app.state, worker)
-    if isinstance(result.get("environment"), dict):
+def install_knowledge_dependencies(reinstall: bool = False, runtime_channel: str | None = None) -> dict[str, object]:
+    result, worker = install_knowledge_dependencies_with_worker(
+        reinstall=reinstall,
+        repository=app.state.task_repository,
+        runtime_channel=runtime_channel,
+    )
+    if worker is not None:
+        replace_task_worker(app.state, worker)
+    if worker is not None and isinstance(result.get("environment"), dict):
         mark_runtime_worker_ready(app.state, result["environment"], message="Runtime worker refreshed after knowledge install.")
     return result
 

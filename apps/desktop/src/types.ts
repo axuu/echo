@@ -295,9 +295,12 @@ export type EnvironmentInfo = {
   localAsrVersion?: string;
   chromadbInstalled?: boolean;
   chromadbVersion?: string;
+  chromadbError?: string;
   sentenceTransformersInstalled?: boolean;
   sentenceTransformersVersion?: string;
+  sentenceTransformersError?: string;
   knowledgeDependenciesReady?: boolean;
+  knowledgeDependenciesError?: string;
   ffmpegLocation?: string;
   recommendedModel?: string;
   recommendedDevice?: string;

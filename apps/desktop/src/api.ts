@@ -471,7 +471,7 @@ export const api = {
       body: JSON.stringify(payload ?? {}),
     });
   },
-  installKnowledgeDependencies(payload?: { reinstall?: boolean }) {
+  installKnowledgeDependencies(payload?: { reinstall?: boolean; runtime_channel?: string; runtimeChannel?: string }) {
     return fetchJson<{
       installed: boolean;
       runtimeChannel?: string;

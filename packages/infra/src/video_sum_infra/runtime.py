@@ -17,13 +17,7 @@ _LEGACY_APP_DATA_MIGRATION_DONE = False
 _RUNTIME_APP_PACKAGE_PREFIXES: tuple[str, ...] = (
     "video_sum_",
 )
-_RUNTIME_PACKAGING_PACKAGE_KEYS: frozenset[str] = frozenset(
-    {
-        "pip",
-        "setuptools",
-        "wheel",
-    }
-)
+_RUNTIME_PACKAGING_PACKAGE_KEYS: frozenset[str] = frozenset()
 
 
 def _env_flag(name: str) -> bool:
@@ -601,6 +595,7 @@ def bootstrap_managed_runtime(runtime_channel: str = "base") -> Path | None:
         not runtime_ready
         or runtime_version != seed_version
         or runtime_metadata.get("runtimeLayout") != seed_metadata.get("runtimeLayout")
+        or runtime_metadata.get("pythonVersion") != seed_metadata.get("pythonVersion")
     )
     if not requires_refresh:
         return runtime_dir

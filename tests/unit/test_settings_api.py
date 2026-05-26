@@ -579,6 +579,7 @@ def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
 
 importlib.metadata.version = fake_version
 builtins.__import__ = fake_import
+sys.modules["sentence_transformers"] = types.ModuleType("sentence_transformers")
 """
         return subprocess.run(
             [sys.executable, "-c", shim + "\n" + script],
@@ -593,10 +594,197 @@ builtins.__import__ = fake_import
     environment = runtime_support.detect_environment("base")
 
     assert environment["chromadbInstalled"] is False
-    assert environment["chromadbVersion"] == ""
+    assert environment["chromadbVersion"] == "1.0.0"
+    assert "chromadb" in environment["chromadbError"]
     assert environment["sentenceTransformersInstalled"] is True
     assert environment["sentenceTransformersVersion"] == "3.0.0"
     assert environment["knowledgeDependenciesReady"] is False
+    assert "chromadb" in environment["knowledgeDependenciesError"]
+
+
+def test_install_knowledge_dependencies_repairs_broken_imports(monkeypatch, tmp_path: Path) -> None:
+    current = ServiceSettings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        tasks_dir=tmp_path / "tasks",
+        runtime_channel="base",
+    )
+    settings_manager._settings = current
+    app.state.task_repository = object()
+    app.state.task_worker = object()
+
+    monkeypatch.setattr(runtime_support, "uses_current_service_python", lambda runtime_channel: False)
+    monkeypatch.setattr(runtime_support, "ensure_runtime_channel", lambda runtime_channel: tmp_path / runtime_channel)
+    monkeypatch.setattr(runtime_support, "runtime_python_executable", lambda runtime_channel: tmp_path / "python.exe")
+    monkeypatch.setattr(runtime_support, "install_workspace_packages", lambda python_executable, runtime_channel: None)
+    monkeypatch.setattr(runtime_support, "ensure_runtime_pip", lambda python_executable, runtime_channel: None)
+    monkeypatch.setattr(runtime_support, "activate_runtime_pythonpath", lambda runtime_channel: None)
+    monkeypatch.setattr(runtime_support, "clear_environment_probe_cache", lambda runtime_channel=None: None)
+    monkeypatch.setattr(runtime_support, "write_runtime_metadata", lambda runtime_channel, payload: None)
+
+    commands: list[tuple[list[str], bool]] = []
+    environments = [
+        {
+            "runtimeChannel": "base",
+            "chromadbInstalled": False,
+            "chromadbVersion": "1.0.0",
+            "chromadbError": "ImportError: missing dependency",
+            "sentenceTransformersInstalled": True,
+            "sentenceTransformersVersion": "3.0.0",
+            "sentenceTransformersError": "",
+            "knowledgeDependenciesReady": False,
+            "knowledgeDependenciesError": "ImportError: missing dependency",
+        },
+        {
+            "runtimeChannel": "base",
+            "chromadbInstalled": True,
+            "chromadbVersion": "1.0.0",
+            "sentenceTransformersInstalled": True,
+            "sentenceTransformersVersion": "3.0.0",
+            "knowledgeDependenciesReady": True,
+        },
+    ]
+
+    def fake_detect_environment(runtime_channel=None):
+        return environments.pop(0)
+
+    def fake_pip_install(python_executable, runtime_channel, packages, *, reinstall=False, **kwargs):
+        commands.append((packages, reinstall))
+        return type("Result", (), {"stdout": "repaired", "stderr": ""})()
+
+    monkeypatch.setattr(runtime_support, "detect_environment", fake_detect_environment)
+    monkeypatch.setattr(runtime_support, "pip_install_with_fallbacks", fake_pip_install)
+    monkeypatch.setattr(
+        runtime_support,
+        "build_worker",
+        lambda repository, current_settings, environment_info=None: {
+            "repository": repository,
+            "environment": environment_info,
+        },
+    )
+
+    response = install_knowledge_dependencies()
+
+    assert response["installed"] is True
+    assert response["repairReinstall"] is True
+    assert commands == [(["chromadb>=1.0.0", "sentence-transformers>=3.0"], True)]
+
+
+def test_install_knowledge_dependencies_can_target_runtime_channel(monkeypatch, tmp_path: Path) -> None:
+    current = ServiceSettings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        tasks_dir=tmp_path / "tasks",
+        runtime_channel="base",
+    )
+    settings_manager._settings = current
+
+    monkeypatch.setattr(runtime_support, "uses_current_service_python", lambda runtime_channel: False)
+    monkeypatch.setattr(runtime_support, "ensure_runtime_channel", lambda runtime_channel: tmp_path / runtime_channel)
+    monkeypatch.setattr(runtime_support, "runtime_python_executable", lambda runtime_channel: tmp_path / runtime_channel / "python.exe")
+    monkeypatch.setattr(runtime_support, "install_workspace_packages", lambda python_executable, runtime_channel: None)
+    monkeypatch.setattr(runtime_support, "ensure_runtime_pip", lambda python_executable, runtime_channel: None)
+    monkeypatch.setattr(runtime_support, "activate_runtime_pythonpath", lambda runtime_channel: None)
+    monkeypatch.setattr(runtime_support, "clear_environment_probe_cache", lambda runtime_channel=None: None)
+    monkeypatch.setattr(runtime_support, "write_runtime_metadata", lambda runtime_channel, payload: None)
+    monkeypatch.setattr(
+        runtime_support,
+        "detect_environment",
+        lambda runtime_channel=None: {
+            "runtimeChannel": runtime_channel,
+            "chromadbInstalled": True,
+            "chromadbVersion": "1.0.0",
+            "sentenceTransformersInstalled": True,
+            "sentenceTransformersVersion": "3.0.0",
+            "knowledgeDependenciesReady": True,
+        },
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "build_worker",
+        lambda repository, current_settings, environment_info=None: {
+            "runtime_channel": current_settings.runtime_channel,
+            "environment": environment_info,
+        },
+    )
+
+    result, worker = runtime_support.install_knowledge_dependencies(
+        reinstall=False,
+        repository=object(),
+        runtime_channel="gpu-cu128",
+    )
+
+    assert result["runtimeChannel"] == "gpu-cu128"
+    assert worker is None
+
+
+def test_install_knowledge_dependencies_refreshes_worker_for_saved_runtime_channel(monkeypatch, tmp_path: Path) -> None:
+    current = ServiceSettings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        tasks_dir=tmp_path / "tasks",
+        runtime_channel="gpu-cu128",
+    )
+    settings_manager._settings = current
+
+    monkeypatch.setattr(runtime_support, "uses_current_service_python", lambda runtime_channel: False)
+    monkeypatch.setattr(runtime_support, "ensure_runtime_channel", lambda runtime_channel: tmp_path / runtime_channel)
+    monkeypatch.setattr(runtime_support, "runtime_python_executable", lambda runtime_channel: tmp_path / runtime_channel / "python.exe")
+    monkeypatch.setattr(runtime_support, "install_workspace_packages", lambda python_executable, runtime_channel: None)
+    monkeypatch.setattr(runtime_support, "ensure_runtime_pip", lambda python_executable, runtime_channel: None)
+    monkeypatch.setattr(runtime_support, "activate_runtime_pythonpath", lambda runtime_channel: None)
+    monkeypatch.setattr(runtime_support, "clear_environment_probe_cache", lambda runtime_channel=None: None)
+    monkeypatch.setattr(runtime_support, "write_runtime_metadata", lambda runtime_channel, payload: None)
+    monkeypatch.setattr(
+        runtime_support,
+        "detect_environment",
+        lambda runtime_channel=None: {
+            "runtimeChannel": runtime_channel,
+            "chromadbInstalled": True,
+            "chromadbVersion": "1.0.0",
+            "sentenceTransformersInstalled": True,
+            "sentenceTransformersVersion": "3.0.0",
+            "knowledgeDependenciesReady": True,
+        },
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "build_worker",
+        lambda repository, current_settings, environment_info=None: {
+            "runtime_channel": current_settings.runtime_channel,
+            "environment": environment_info,
+        },
+    )
+
+    result, worker = runtime_support.install_knowledge_dependencies(
+        reinstall=False,
+        repository=object(),
+        runtime_channel="gpu-cu128",
+    )
+
+    assert result["runtimeChannel"] == "gpu-cu128"
+    assert worker == {
+        "runtime_channel": "gpu-cu128",
+        "environment": result["environment"],
+    }
+
+
+def test_ensure_runtime_pip_tries_ensurepip_for_broken_pip(monkeypatch, tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command, runtime_channel, timeout=120):
+        calls.append(command)
+        if command[-2:] == ["pip", "--version"] and len(calls) == 1:
+            raise subprocess.CalledProcessError(1, command, stderr="ImportError: broken pip")
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(runtime_support, "run_command", fake_run)
+
+    runtime_support.ensure_runtime_pip(tmp_path / "python.exe", "base")
+
+    assert calls[0][-2:] == ["pip", "--version"]
+    assert calls[1][-3:] == ["ensurepip", "--upgrade", "--default-pip"]
+    assert calls[2][-2:] == ["pip", "--version"]
 
 
 def test_install_workspace_packages_bootstraps_hatchling_before_local_packages(
@@ -902,7 +1090,7 @@ def test_ensure_runtime_channel_syncs_base_preserves_macos_runtime(
     metadata = runtime_support.read_runtime_metadata(gpu_dir)
 
     assert result == gpu_dir
-    assert (gpu_bin / "python").read_text(encoding="utf-8") == "gpu-python"
+    assert (gpu_bin / "python").read_text(encoding="utf-8") == "base-python"
     assert (gpu_lib / "libpython3.12.dylib").read_text(encoding="utf-8") == "base-libpython"
     assert (gpu_dir / "pythonpath.pth").read_text(encoding="utf-8") == "base-pythonpath"
     assert not (gpu_dir / "pyvenv.cfg").exists()
@@ -920,6 +1108,73 @@ def test_ensure_runtime_channel_syncs_base_preserves_macos_runtime(
     assert metadata["pythonVersion"] == "3.12.0"
     assert metadata["cudaVariant"] == "cu128"
     assert metadata["localAsrInstalled"] is True
+
+
+def test_ensure_runtime_channel_syncs_macos_python_entrypoints(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    base_dir = runtime_root / "base"
+    gpu_dir = runtime_root / "gpu-cu128"
+    base_bin = base_dir / "bin"
+    gpu_bin = gpu_dir / "bin"
+    base_site_packages = base_dir / "lib" / "python3.12" / "site-packages"
+    gpu_site_packages = gpu_dir / "lib" / "python3.12" / "site-packages"
+    base_bin.mkdir(parents=True)
+    gpu_bin.mkdir(parents=True)
+    base_site_packages.mkdir(parents=True)
+    gpu_site_packages.mkdir(parents=True)
+    (base_bin / "python").write_text("base-python", encoding="utf-8")
+    (base_bin / "python3").write_text("base-python3", encoding="utf-8")
+    (base_bin / "python3.12").write_text("base-python3.12", encoding="utf-8")
+    (base_bin / "pip").write_text("base-pip", encoding="utf-8")
+    (base_bin / "video-sum-transcribe-worker").write_text("new-worker", encoding="utf-8")
+    (gpu_bin / "python").write_text("old-python", encoding="utf-8")
+    (gpu_bin / "python3").write_text("old-python3", encoding="utf-8")
+    (gpu_bin / "python3.12").write_text("old-python3.12", encoding="utf-8")
+    (gpu_bin / "pip").write_text("keep-pip", encoding="utf-8")
+    (gpu_bin / "video-sum-transcribe-worker").write_text("old-worker", encoding="utf-8")
+    (base_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"base","runtimeLayout":"portable-cpython",'
+            '"appVersion":"2.0.0","pythonVersion":"3.12.0"}'
+        ),
+        encoding="utf-8",
+    )
+    (gpu_dir / "video_sum_runtime.json").write_text(
+        (
+            '{"runtimeChannel":"gpu-cu128","runtimeLayout":"portable-cpython",'
+            '"appVersion":"1.0.0","pythonVersion":"3.12.0"}'
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        runtime_support,
+        "managed_runtime_dir",
+        lambda runtime_channel: runtime_root / runtime_channel,
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "bootstrap_managed_runtime",
+        lambda runtime_channel: base_dir if runtime_channel == "base" else None,
+    )
+    monkeypatch.setattr(
+        runtime_support,
+        "runtime_python_executable",
+        lambda runtime_channel: runtime_root / runtime_channel / "bin" / "python"
+        if (runtime_root / runtime_channel / "bin" / "python").exists()
+        else None,
+    )
+
+    runtime_support.ensure_runtime_channel("gpu-cu128")
+
+    assert (gpu_bin / "python").read_text(encoding="utf-8") == "base-python"
+    assert (gpu_bin / "python3").read_text(encoding="utf-8") == "base-python3"
+    assert (gpu_bin / "python3.12").read_text(encoding="utf-8") == "base-python3.12"
+    assert (gpu_bin / "pip").read_text(encoding="utf-8") == "keep-pip"
+    assert (gpu_bin / "video-sum-transcribe-worker").read_text(encoding="utf-8") == "new-worker"
 
 
 def test_ensure_runtime_channel_restores_gpu_runtime_when_sync_fails(

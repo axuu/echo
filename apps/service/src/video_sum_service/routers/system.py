@@ -508,11 +508,19 @@ def post_local_asr_install(request: Request, payload: dict[str, object] | None =
 
 @router.post("/knowledge/install")
 def post_knowledge_install(request: Request, payload: dict[str, object] | None = None) -> dict[str, object]:
-    reinstall = bool((payload or {}).get("reinstall"))
-    result, worker = install_knowledge_dependencies(reinstall=reinstall, repository=request.app.state.task_repository)
-    _clear_knowledge_service_cache(request.app.state)
-    replace_task_worker(request.app.state, worker)
-    if isinstance(result.get("environment"), dict):
+    payload = payload or {}
+    reinstall = bool(payload.get("reinstall"))
+    runtime_channel_raw = str(payload.get("runtime_channel") or payload.get("runtimeChannel") or "").strip()
+    runtime_channel = normalize_runtime_channel(runtime_channel_raw, allow_unknown_gpu=True) if runtime_channel_raw else None
+    result, worker = install_knowledge_dependencies(
+        reinstall=reinstall,
+        repository=request.app.state.task_repository,
+        runtime_channel=runtime_channel,
+    )
+    if worker is not None:
+        _clear_knowledge_service_cache(request.app.state)
+        replace_task_worker(request.app.state, worker)
+    if worker is not None and isinstance(result.get("environment"), dict):
         mark_runtime_worker_ready(
             request.app.state,
             result["environment"],

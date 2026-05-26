@@ -358,9 +358,8 @@ def cleanup_runtime_site_packages(python_exe: Path) -> None:
     unnecessary_packages = {
         "sympy": True,       # 符号计算库，74MB，与视频摘要无关
         "mpmath": True,      # sympy 的依赖
-        "pip": True,         # 运行时不需要安装包
-        "setuptools": True,  # 构建工具，运行时不需要
-        "wheel": True,       # 构建工具，运行时不需要
+        # pip/setuptools/wheel/ensurepip must stay in the managed runtime because
+        # optional features install and repair their own dependencies after app updates.
         "rich": True,        # 终端美化，运行时不需要
         "typer": True,       # CLI 框架，运行时不需要
         "pygments": True,    # 语法高亮，rich/typer 的依赖

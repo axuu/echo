@@ -176,7 +176,15 @@ jobs:
   validate-macos-package:
     needs: detect-release
     if: ${{ needs.detect-release.outputs.bump != '' }}
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
     env:
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
     outputs:
@@ -238,7 +246,7 @@ jobs:
       - name: Build macOS release candidate
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run package:mac
+        run: npm --prefix apps/desktop run package:mac -- --${{ matrix.arch }}
 
       - name: Collect macOS release assets
         env:
@@ -246,8 +254,8 @@ jobs:
         run: |
           set -euo pipefail
           asset_dir="$GITHUB_WORKSPACE/dist/release-assets-macos"
-          dmg_pattern="BiliSum-${RELEASE_VERSION}-*mac*.dmg"
-          zip_pattern="BiliSum-${RELEASE_VERSION}-*mac*.zip"
+          dmg_pattern="BiliSum-${RELEASE_VERSION}-mac-${{ matrix.arch }}.dmg"
+          zip_pattern="BiliSum-${RELEASE_VERSION}-mac-${{ matrix.arch }}.zip"
 
           if [[ ! -d "$GITHUB_WORKSPACE/dist" ]]; then
             echo "Build output directory not found: $GITHUB_WORKSPACE/dist" >&2
@@ -278,18 +286,54 @@ jobs:
 
           cp "$dmg_path" "$asset_dir/"
           cp "$zip_path" "$asset_dir/"
-          cp "$latest_mac_yml" "$asset_dir/"
+          cp "$latest_mac_yml" "$asset_dir/latest-mac-${{ matrix.arch }}.yml"
+          blockmap_path="$(find "$GITHUB_WORKSPACE/dist" -type f -name "$(basename "$zip_path").blockmap" -print -quit)"
+          if [[ -n "$blockmap_path" ]]; then
+            cp "$blockmap_path" "$asset_dir/"
+          fi
+          packaged_update_yml="$(find "$GITHUB_WORKSPACE/dist/desktop" -path "*/BiliSum.app/Contents/Resources/app-update.yml" -print -quit)"
+          if [[ -z "$packaged_update_yml" ]]; then
+            echo "Packaged app-update.yml was not found in the macOS app resources." >&2
+            find "$GITHUB_WORKSPACE/dist/desktop" -maxdepth 5 -type f -name "app-update.yml" -print || true
+            exit 1
+          fi
+          python - "$packaged_update_yml" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          expected = {
+              "provider": "github",
+              "owner": "lycohana",
+              "repo": "BiliSum",
+          }
+          values = {}
+          for raw_line in path.read_text(encoding="utf-8").splitlines():
+              line = raw_line.strip()
+              if not line or line.startswith("#") or ":" not in line:
+                  continue
+              key, value = line.split(":", 1)
+              values[key.strip()] = value.strip().strip('"\'')
+          missing = [
+              f"{key}={expected_value!r} (got {values.get(key)!r})"
+              for key, expected_value in expected.items()
+              if values.get(key) != expected_value
+          ]
+          if missing:
+              raise SystemExit("Packaged app-update.yml has unexpected update config: " + ", ".join(missing))
+          PY
           echo "Collected macOS release assets:"
           ls -lh "$asset_dir"
 
       - name: Upload macOS release assets
         uses: actions/upload-artifact@v4
         with:
-          name: release-assets-macos-${{ needs.detect-release.outputs.next_version }}
+          name: release-assets-macos-${{ matrix.arch }}-${{ needs.detect-release.outputs.next_version }}
           path: |
             dist/release-assets-macos/BiliSum-*.dmg
             dist/release-assets-macos/BiliSum-*.zip
-            dist/release-assets-macos/latest-mac.yml
+            dist/release-assets-macos/BiliSum-*.zip.blockmap
+            dist/release-assets-macos/latest-mac-*.yml
           if-no-files-found: error
 
   create-release-tag:
@@ -388,8 +432,74 @@ jobs:
       - name: Download macOS release assets
         uses: actions/download-artifact@v4
         with:
-          name: release-assets-macos-${{ needs.detect-release.outputs.next_version }}
+          pattern: release-assets-macos-*-${{ needs.detect-release.outputs.next_version }}
           path: dist/release-assets
+          merge-multiple: true
+
+      - name: Compose macOS update feed
+        env:
+          RELEASE_VERSION: ${{ needs.detect-release.outputs.next_version }}
+        run: |
+          python - <<'PY'
+          import base64
+          import hashlib
+          import os
+          import re
+          from pathlib import Path
+
+          asset_dir = Path("dist/release-assets")
+          version = os.environ["RELEASE_VERSION"]
+          arches = ("x64", "arm64")
+          files = []
+          for arch in arches:
+              zip_path = asset_dir / f"BiliSum-{version}-mac-{arch}.zip"
+              dmg_path = asset_dir / f"BiliSum-{version}-mac-{arch}.dmg"
+              if not zip_path.exists():
+                  raise SystemExit(f"Missing macOS ZIP for {arch}: {zip_path}")
+              if not dmg_path.exists():
+                  raise SystemExit(f"Missing macOS DMG for {arch}: {dmg_path}")
+              data = zip_path.read_bytes()
+              files.append({
+                  "url": zip_path.name,
+                  "sha512": base64.b64encode(hashlib.sha512(data).digest()).decode("ascii"),
+                  "size": zip_path.stat().st_size,
+                  "arch": arch,
+              })
+
+          release_date = ""
+          for feed in sorted(asset_dir.glob("latest-mac-*.yml")):
+              text = feed.read_text(encoding="utf-8")
+              match = re.search(r"^releaseDate:\s*(.+)$", text, re.M)
+              if match:
+                  release_date = match.group(1).strip()
+                  break
+          if not release_date:
+              release_date = os.environ.get("GITHUB_RUN_STARTED_AT", "")
+          if not release_date:
+              from datetime import datetime, timezone
+              release_date = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+          lines = [
+              f"version: {version}",
+              "files:",
+          ]
+          for item in files:
+              lines.extend([
+                  f"  - url: {item['url']}",
+                  f"    sha512: {item['sha512']}",
+                  f"    size: {item['size']}",
+                  f"    arch: {item['arch']}",
+              ])
+          first = next(item for item in files if item["arch"] == "x64")
+          lines.extend([
+              f"path: {first['url']}",
+              f"sha512: {first['sha512']}",
+              f"releaseDate: {release_date}",
+              "",
+          ])
+          (asset_dir / "latest-mac.yml").write_text("\n".join(lines), encoding="utf-8")
+          print((asset_dir / "latest-mac.yml").read_text(encoding="utf-8"))
+          PY
 
       - name: Generate release notes
         run: |
@@ -409,6 +519,7 @@ jobs:
             dist/release-assets/BiliSum-*-Setup.exe.blockmap
             dist/release-assets/BiliSum-*.dmg
             dist/release-assets/BiliSum-*.zip
+            dist/release-assets/BiliSum-*.zip.blockmap
             dist/release-assets/latest.yml
             dist/release-assets/latest-mac.yml
 

@@ -473,33 +473,47 @@ def torch_install_with_fallbacks(
     raise HTTPException(status_code=500, detail=pip_install_error_detail("CUDA 运行环境依赖", attempts))
 
 
-def ensure_runtime_pip(python_executable: Path, runtime_channel: str) -> None:
+def ensure_python_pip(python_executable: Path, runtime_channel: str, runner=run_command) -> None:
+    pip_check_error: subprocess.CalledProcessError | None = None
     try:
-        run_command([str(python_executable), "-m", "pip", "--version"], runtime_channel=runtime_channel, timeout=120)
+        runner([str(python_executable), "-m", "pip", "--version"], runtime_channel=runtime_channel, timeout=120)
         return
     except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or str(exc)).strip()
-        if "No module named pip" not in detail:
-            raise
+        pip_check_error = exc
 
     try:
-        run_command([str(python_executable), "-m", "ensurepip", "--upgrade"], runtime_channel=runtime_channel, timeout=300)
+        runner(
+            [str(python_executable), "-m", "ensurepip", "--upgrade", "--default-pip"],
+            runtime_channel=runtime_channel,
+            timeout=300,
+        )
     except subprocess.CalledProcessError as exc:
+        original_detail = (
+            command_error_detail(pip_check_error, "pip 启动失败。")
+            if pip_check_error is not None
+            else ""
+        )
+        repair_detail = command_error_detail(
+            exc,
+            "运行环境里的 pip 不可用，且 ensurepip 自动修复失败。"
+            "这通常是旧版本运行时在应用更新后缺少 pip 工具链或 pip 已损坏，请先同步/刷新运行环境后重试。",
+        )
         raise HTTPException(
             status_code=500,
-            detail=command_error_detail(
-                exc,
-                "当前运行环境缺少 pip，且自动修复 pip 失败。请重启应用后重试，或删除运行环境目录让 BiliSum 重新释放运行时。",
-            ),
+            detail="\n\n".join(part for part in [repair_detail, original_detail] if part).strip(),
         ) from exc
 
     try:
-        run_command([str(python_executable), "-m", "pip", "--version"], runtime_channel=runtime_channel, timeout=120)
+        runner([str(python_executable), "-m", "pip", "--version"], runtime_channel=runtime_channel, timeout=120)
     except subprocess.CalledProcessError as exc:
         raise HTTPException(
             status_code=500,
             detail=command_error_detail(exc, "pip 修复完成后仍无法启动。"),
         ) from exc
+
+
+def ensure_runtime_pip(python_executable: Path, runtime_channel: str) -> None:
+    ensure_python_pip(python_executable, runtime_channel, runner=run_command)
 
 
 def install_workspace_packages(python_executable: Path, runtime_channel: str) -> None:
@@ -845,7 +859,13 @@ def sync_runtime_scripts(target_scripts_dir: Path, base_scripts_dir: Path) -> No
     if not base_scripts_dir.exists():
         return
     target_scripts_dir.mkdir(parents=True, exist_ok=True)
-    for pattern in ("video-sum-service*", "video-sum-transcribe-worker*"):
+    for pattern in (
+        "python",
+        "python3",
+        "python3.*",
+        "video-sum-service*",
+        "video-sum-transcribe-worker*",
+    ):
         for item in base_scripts_dir.glob(pattern):
             copy_runtime_item(item, target_scripts_dir / item.name)
 
@@ -1050,6 +1070,7 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
                 "pythonVersion": "",
                 "torchInstalled": False,
                 "torchVersion": "",
+                "torchError": "Runtime Python executable is missing.",
                 "cudaAvailable": False,
                 "gpuName": "",
                 "ytDlpVersion": "",
@@ -1058,28 +1079,46 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
                 "localAsrVersion": "",
                 "chromadbInstalled": False,
                 "chromadbVersion": "",
+                "chromadbError": "",
                 "sentenceTransformersInstalled": False,
                 "sentenceTransformersVersion": "",
+                "sentenceTransformersError": "",
                 "knowledgeDependenciesReady": False,
+                "knowledgeDependenciesError": "Runtime Python executable is missing.",
                 "ffmpegLocation": "",
                 "recommendedModel": "base",
                 "recommendedDevice": "cpu",
                 "runtimeChannel": active_channel,
                 "runtimeReady": False,
                 "runtimePython": "",
+                "runtimeError": "Runtime Python executable is missing.",
             }
             _store_cached_environment_probe(active_channel, payload)
             return payload
 
     script = textwrap.dedent(
         """
+        import importlib
         import importlib.metadata
         import json
         import sys
+        torch_error = ""
         try:
             import torch
-        except ImportError:
+        except Exception as exc:
             torch = None
+            torch_error = f"{type(exc).__name__}: {exc}"
+
+        def importable_distribution(distribution_name, import_name):
+            try:
+                version = importlib.metadata.version(distribution_name)
+            except importlib.metadata.PackageNotFoundError:
+                return False, "", ""
+            try:
+                importlib.import_module(import_name)
+            except Exception as exc:
+                return False, version, f"{type(exc).__name__}: {exc}"
+            return True, version, ""
 
         cuda_available = bool(torch is not None and torch.cuda.is_available())
         gpu_name = torch.cuda.get_device_name(0) if cuda_available else ""
@@ -1087,6 +1126,7 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
             "pythonVersion": sys.version.split()[0],
             "torchInstalled": torch is not None,
             "torchVersion": torch.__version__ if torch is not None else "",
+            "torchError": torch_error,
             "cudaAvailable": cuda_available,
             "gpuName": gpu_name,
             "ytDlpVersion": importlib.metadata.version("yt-dlp"),
@@ -1095,9 +1135,12 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
             "localAsrAvailable": False,
             "chromadbVersion": "",
             "chromadbInstalled": False,
+            "chromadbError": "",
             "sentenceTransformersVersion": "",
             "sentenceTransformersInstalled": False,
+            "sentenceTransformersError": "",
             "knowledgeDependenciesReady": False,
+            "knowledgeDependenciesError": "",
             "ffmpegLocation": "",
             "recommendedModel": "large-v3-turbo" if cuda_available else "base",
             "recommendedDevice": "cuda" if cuda_available else "cpu",
@@ -1108,23 +1151,25 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
             payload["localAsrAvailable"] = True
         except importlib.metadata.PackageNotFoundError:
             pass
-        try:
-            chromadb_version = importlib.metadata.version("chromadb")
-            import chromadb
-            payload["chromadbVersion"] = chromadb_version
-            payload["chromadbInstalled"] = True
-        except (ImportError, importlib.metadata.PackageNotFoundError):
-            pass
-        try:
-            sentence_transformers_version = importlib.metadata.version("sentence-transformers")
-            import sentence_transformers
-            payload["sentenceTransformersVersion"] = sentence_transformers_version
-            payload["sentenceTransformersInstalled"] = True
-        except (ImportError, importlib.metadata.PackageNotFoundError):
-            pass
+        chromadb_installed, chromadb_version, chromadb_error = importable_distribution("chromadb", "chromadb")
+        payload["chromadbVersion"] = chromadb_version
+        payload["chromadbInstalled"] = chromadb_installed
+        payload["chromadbError"] = chromadb_error
+        st_installed, st_version, st_error = importable_distribution("sentence-transformers", "sentence_transformers")
+        payload["sentenceTransformersVersion"] = st_version
+        payload["sentenceTransformersInstalled"] = st_installed
+        payload["sentenceTransformersError"] = st_error
         payload["knowledgeDependenciesReady"] = bool(
             payload.get("chromadbInstalled") and payload.get("sentenceTransformersInstalled")
         )
+        if not payload["knowledgeDependenciesReady"]:
+            errors = [
+                value for value in [
+                    payload.get("chromadbError"),
+                    payload.get("sentenceTransformersError"),
+                ] if value
+            ]
+            payload["knowledgeDependenciesError"] = "\\n".join(errors)
         print(json.dumps(payload, ensure_ascii=False))
         """
     ).strip()
@@ -1158,9 +1203,12 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
             "localAsrVersion": "",
             "chromadbInstalled": False,
             "chromadbVersion": "",
+            "chromadbError": "",
             "sentenceTransformersInstalled": False,
             "sentenceTransformersVersion": "",
+            "sentenceTransformersError": "",
             "knowledgeDependenciesReady": False,
+            "knowledgeDependenciesError": failure_detail[-1200:],
             "ffmpegLocation": "",
             "recommendedModel": "base",
             "recommendedDevice": "cpu",
@@ -1184,9 +1232,12 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
     payload["localAsrVersion"] = str(payload.get("localAsrVersion") or "")
     payload["chromadbInstalled"] = bool(payload.get("chromadbInstalled"))
     payload["chromadbVersion"] = str(payload.get("chromadbVersion") or "")
+    payload["chromadbError"] = str(payload.get("chromadbError") or "")
     payload["sentenceTransformersInstalled"] = bool(payload.get("sentenceTransformersInstalled"))
     payload["sentenceTransformersVersion"] = str(payload.get("sentenceTransformersVersion") or "")
+    payload["sentenceTransformersError"] = str(payload.get("sentenceTransformersError") or "")
     payload["knowledgeDependenciesReady"] = bool(payload.get("knowledgeDependenciesReady"))
+    payload["knowledgeDependenciesError"] = str(payload.get("knowledgeDependenciesError") or "")
     payload["runtimeError"] = str(payload.get("runtimeError") or "")
     _store_cached_environment_probe(active_channel, payload)
     return payload
@@ -1512,9 +1563,12 @@ def install_local_asr(reinstall: bool, repository: SqliteTaskRepository) -> tupl
 def install_knowledge_dependencies(
     reinstall: bool,
     repository: SqliteTaskRepository,
-) -> tuple[dict[str, object], TaskWorker]:
+    runtime_channel: str | None = None,
+) -> tuple[dict[str, object], TaskWorker | None]:
     current_settings = settings_manager.current
-    runtime_channel = normalize_runtime_channel(current_settings.runtime_channel, allow_unknown_gpu=True)
+    runtime_channel = normalize_runtime_channel(runtime_channel or current_settings.runtime_channel, allow_unknown_gpu=True)
+    current_runtime_channel = normalize_runtime_channel(current_settings.runtime_channel, allow_unknown_gpu=True)
+    should_refresh_worker = runtime_channel == current_runtime_channel
     use_current_python = uses_current_service_python(runtime_channel)
     if use_current_python:
         runtime_dir = repo_root()
@@ -1527,11 +1581,16 @@ def install_knowledge_dependencies(
     if runtime_dir is None or python_executable is None:
         raise HTTPException(status_code=500, detail="Managed runtime is unavailable.")
 
+    repair_reinstall = False
+    clear_environment_probe_cache(runtime_channel)
+    environment = detect_environment(runtime_channel)
     if not reinstall:
-        clear_environment_probe_cache(runtime_channel)
-        environment = detect_environment(runtime_channel)
         if environment.get("knowledgeDependenciesReady"):
-            worker = build_worker(repository, current_settings, environment_info=environment)
+            worker = (
+                build_worker(repository, current_settings, environment_info=environment)
+                if should_refresh_worker
+                else None
+            )
             write_runtime_metadata(
                 runtime_channel,
                 {
@@ -1550,6 +1609,13 @@ def install_knowledge_dependencies(
                 "stdoutTail": "知识库依赖已在当前运行环境可用，无需重复安装。",
                 "environment": environment,
             }, worker
+        repair_reinstall = bool(
+            environment.get("chromadbVersion")
+            or environment.get("sentenceTransformersVersion")
+            or environment.get("chromadbError")
+            or environment.get("sentenceTransformersError")
+            or environment.get("knowledgeDependenciesError")
+        )
 
     packages = [
         "chromadb>=1.0.0",
@@ -1558,13 +1624,16 @@ def install_knowledge_dependencies(
 
     try:
         if not use_current_python:
+            install_workspace_packages(python_executable, runtime_channel=runtime_channel)
             ensure_runtime_pip(python_executable, runtime_channel)
+        else:
+            ensure_python_pip(python_executable, runtime_channel, runner=runner)
         result = pip_install_with_fallbacks(
             python_executable,
             runtime_channel,
             packages,
             package_label="知识库依赖",
-            reinstall=reinstall,
+            reinstall=reinstall or repair_reinstall,
             timeout=1800,
             runner=runner,
         )
@@ -1579,7 +1648,11 @@ def install_knowledge_dependencies(
     activate_runtime_pythonpath(runtime_channel)
     clear_environment_probe_cache(runtime_channel)
     environment = detect_environment(runtime_channel)
-    worker = build_worker(repository, current_settings, environment_info=environment)
+    worker = (
+        build_worker(repository, current_settings, environment_info=environment)
+        if should_refresh_worker
+        else None
+    )
     write_runtime_metadata(
         runtime_channel,
         {
@@ -1596,5 +1669,6 @@ def install_knowledge_dependencies(
         "installed": bool(environment.get("knowledgeDependenciesReady")),
         "runtimeChannel": runtime_channel,
         "stdoutTail": ((result.stdout or "") + "\n" + (result.stderr or "")).strip()[-1500:],
+        "repairReinstall": repair_reinstall,
         "environment": environment,
     }, worker

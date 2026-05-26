@@ -17,11 +17,6 @@ BIN_DIR = BUILD_ROOT / "bin"
 RUNTIME_EXCLUDE_PACKAGES = [
     'sympy',
     'mpmath',
-    'pip',
-    'setuptools',
-    'wheel',
-    'distutils',
-    'ensurepip',
     'rich',
     'typer',
     'pygments',
@@ -135,12 +130,6 @@ a = Analysis(
         # 大型数学符号计算库 - 运行时推理不需要
         'sympy',
         'mpmath',
-        # 开发/构建工具 - 运行时不需要
-        'pip',
-        'setuptools',
-        'wheel',
-        'distutils',
-        'ensurepip',
         # 测试框架
         'pytest',
         'nose',
