@@ -1082,6 +1082,14 @@ export function SettingsPage({
     void refreshTaskList();
   }, [taskListOpen]);
 
+  // Must be called before any conditional return (React hooks rules).
+  const funasrInstalled = Boolean(environment?.funasrInstalled);
+  useEffect(() => {
+    if (!funasrInstalled && form?.transcription_provider === "funasr") {
+      setForm({ ...form, transcription_provider: "siliconflow" });
+    }
+  }, [funasrInstalled]);
+
   if (!form) return <section className="grid-card empty-state-card">正在加载设置...</section>;
 
   const usesSiliconFlowAsr = form.transcription_provider === "siliconflow";
@@ -1094,10 +1102,6 @@ export function SettingsPage({
   const queuedTaskCount = taskList.filter((task) => task.status === "queued").length;
   const runningTaskCount = taskList.filter((task) => task.status === "running").length;
   const localAsrInstalled = Boolean(environment?.localAsrInstalled);
-  const funasrInstalled = Boolean(environment?.funasrInstalled);
-
-  useEffect(() => {
-    if (!funasrInstalled && form?.transcription_provider === "funasr") {
       setForm({ ...form, transcription_provider: "siliconflow" });
     }
   }, [funasrInstalled]);

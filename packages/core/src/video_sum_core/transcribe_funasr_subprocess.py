@@ -139,12 +139,9 @@ def parse_funasr_result(
                 end_val = float(sent.get("end", 0))
                 # Heuristic: if the span of a single sentence is > 100 seconds,
                 # timestamps are in milliseconds.
-                # Double-check: also require that start or end > 1000 (ms range)
-                # to avoid false-positives on genuinely long sentences.
-                if (end_val - start_val) > 100 and (start_val > 1000 or end_val > 1000):
-                    start_val /= 1000.0
-                    end_val /= 1000.0
-                elif (end_val - start_val) > 100:
+                # Heuristic: if the span of a single sentence is > 100 seconds,
+                # timestamps are in milliseconds
+                if (end_val - start_val) > 100:
                     start_val /= 1000.0
                     end_val /= 1000.0
                 seg = {
@@ -179,14 +176,14 @@ def parse_funasr_result(
                 # may lack punctuation when punc model applies separately),
                 # fall back to splitting on timestamp *gaps* — a gap > 0.5 s
                 # between consecutive words almost always means a sentence
-                # boundary.
-                if len(sents) <= 1:
+                # boundary.  Only works for SEACO dict timestamps (which
+                # carry per-character text); skip for legacy list-of-pairs.
+                if len(sents) <= 1 and all(isinstance(t, dict) for t in timestamp):
                     gap_threshold = 0.3
                     gap_sents: list[str] = []
                     gap_buf: list[str] = []
                     for i, (ts_s, ts_e) in enumerate(ts_entries):
-                        gap_buf.append(str(timestamp[i].get("text", "")) if isinstance(timestamp[i], dict) else "")
-                        # Check gap to next word
+                        gap_buf.append(str(timestamp[i].get("text", "")))
                         if i + 1 < len(ts_entries):
                             next_start = ts_entries[i + 1][0]
                             if next_start - ts_e > gap_threshold:
