@@ -150,7 +150,7 @@ class TestFunasrProvider:
                 output_path=output_path,
             )
 
-        assert command[0] == "/usr/bin/python"
+        assert command[0] == str(Path("/usr/bin/python"))
         assert "-m" in command
         assert "video_sum_core.transcribe_funasr_subprocess" in command
         assert "--audio-path" in command
