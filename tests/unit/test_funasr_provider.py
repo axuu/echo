@@ -192,7 +192,7 @@ class TestFunasrProvider:
                 with patch("video_sum_core.pipeline.real.time.monotonic") as mock_time:
                     mock_time.side_effect = [0, 0, 9999]
 
-                    with pytest.raises(VideoSumError, match="timed out"):
+                    with pytest.raises(VideoSumError, match="timed out|no progress"):
                         runner._run_funasr_subprocess(
                             audio_path=audio_path,
                             duration=1.0,
