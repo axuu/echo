@@ -1741,9 +1741,9 @@ def install_funasr(reinstall: bool, repository: SqliteTaskRepository, *, session
     runner = _StreamingRunner(session_id) if use_streaming else run_command
 
     try:
-        # W3: GPU runtime skip workspace reinstall to avoid CUDA version conflicts
-        if "gpu" not in runtime_channel:
-            install_workspace_packages(python_executable, runtime_channel=runtime_channel)
+        # install_workspace_packages bootstraps pip + workspace packages.
+        # GPU runtimes already use --no-deps, so workspace reinstall is safe.
+        install_workspace_packages(python_executable, runtime_channel=runtime_channel)
         ensure_runtime_pip(python_executable, runtime_channel)
         result = pip_install_with_fallbacks(
             python_executable,
