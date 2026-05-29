@@ -371,6 +371,11 @@ TRANSCRIPTION_PROVIDER_ALIASES = {
     "multimodal": "multimodal",
     "openai-multimodal": "multimodal",
     "openai_multimodal": "multimodal",
+    "funasr": "funasr",
+    "fun-asr": "funasr",
+    "qwenasr": "funasr",
+    "qwen-asr": "funasr",
+    "paraformer": "funasr",
 }
 
 KNOWLEDGE_LLM_MODE_ALIASES = {
@@ -463,6 +468,13 @@ def normalize_prompt_router_mode(value: str | None, default: str = "confirm") ->
     return PROMPT_ROUTER_MODE_ALIASES.get(normalized, default)
 
 
+def normalize_funasr_hub(value: str | None, default: str = "ms") -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return default
+    return "hf" if normalized in ("hf", "huggingface") else "ms"
+
+
 def recommend_task_concurrency(settings: "ServiceSettings", *, cuda_available: bool | None = None) -> int:
     provider = normalize_transcription_provider(settings.transcription_provider)
     if provider == "local":
@@ -523,6 +535,14 @@ class ServiceSettings(BaseSettings):
     multimodal_asr_api_key: str = ""
     multimodal_asr_chunk_duration_seconds: int = 180
     multimodal_asr_max_retries: int = 5
+    funasr_model: str = "paraformer-zh"
+    funasr_device: str = "cpu"
+    funasr_vad_model: str = "fsmn-vad"
+    funasr_punc_model: str = "ct-punc"
+    funasr_spk_model: str = ""
+    funasr_hub: str = "ms"
+    funasr_hotword: str = ""
+    funasr_available: bool = False
     cuda_variant: str = "cu128"
     runtime_channel: str = "base"
     output_dir: str = ""

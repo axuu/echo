@@ -65,6 +65,13 @@ class SettingsUpdatePayload(BaseModel):
     multimodal_asr_api_key: str | None = None
     multimodal_asr_chunk_duration_seconds: int | None = None
     multimodal_asr_max_retries: int | None = None
+    funasr_model: str | None = None
+    funasr_device: str | None = None
+    funasr_vad_model: str | None = None
+    funasr_punc_model: str | None = None
+    funasr_spk_model: str | None = None
+    funasr_hub: str | None = None
+    funasr_hotword: str | None = None
     cuda_variant: str | None = None
     runtime_channel: str | None = None
     output_dir: str | None = None

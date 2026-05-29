@@ -26,3 +26,4 @@ temp_repo_inspect/
 # the hashed Vite bundle referenced by index.html must be committed with it.
 /.claude
 null
+/.ccg

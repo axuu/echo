@@ -1,4 +1,5 @@
 import logging
+import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -76,6 +77,7 @@ class TaskWorker:
         self._task_state = _TaskQueueState("task", task_concurrency)
         self._mindmap_state = _TaskQueueState("mindmap", mindmap_concurrency)
         self._visual_state = _TaskQueueState("visual", 1)
+        self._active_runner: object = None
         self._lock = Lock()
         self._condition = Condition(self._lock)
         self._accept_new_work = True
@@ -149,6 +151,10 @@ class TaskWorker:
                 if dropped:
                     logger.info("dropped pending jobs during worker shutdown count=%d", dropped)
             self._condition.notify_all()
+        # C2/C7: cancel active pipeline runner
+        active_runner = self._active_runner
+        if active_runner is not None and hasattr(active_runner, 'cancel'):
+            active_runner.cancel()
         if wait:
             deadline = None if timeout is None else datetime.now(timezone.utc).timestamp() + timeout
             for thread in self._dispatch_threads:
@@ -164,6 +170,14 @@ class TaskWorker:
                 if join_timeout == 0:
                     break
                 job_threads[0].join(join_timeout)
+            # W7: extra timeout for orphan subprocesses
+            orphan_deadline = time.monotonic() + 10
+            while any(t.is_alive() for t in self._job_threads) and time.monotonic() < orphan_deadline:
+                time.sleep(0.5)
+            # force cancel remaining active runners
+            active_runner = self._active_runner
+            if active_runner is not None and hasattr(active_runner, 'cancel'):
+                active_runner.cancel()
 
     def snapshot(self) -> dict[str, object]:
         with self._condition:
@@ -266,6 +280,7 @@ class TaskWorker:
             message="任务开始执行",
         )
 
+        self._active_runner = self._pipeline_runner
         try:
             context = PipelineContext(task_id=task_id, task_input=record.task_input)
 
@@ -340,6 +355,8 @@ class TaskWorker:
                 message="任务执行失败",
                 payload={"error": str(exc)},
             )
+        finally:
+            self._active_runner = None
 
     def _can_auto_generate_mindmap(self, result: TaskResult) -> bool:
         return bool(

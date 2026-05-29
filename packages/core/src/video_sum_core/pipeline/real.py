@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -201,6 +202,14 @@ class PipelineSettings:
     multimodal_asr_api_key: str = ""
     multimodal_asr_chunk_duration_seconds: int = 180
     multimodal_asr_max_retries: int = 5
+    funasr_model: str = "paraformer-zh"
+    funasr_device: str = "cpu"
+    funasr_vad_model: str = "fsmn-vad"
+    funasr_punc_model: str = "ct-punc"
+    funasr_spk_model: str = ""
+    funasr_hub: str = "ms"
+    funasr_hotword: str = ""
+    funasr_available: bool = False
     llm_enabled: bool = False
     llm_provider: str = "openai-compatible"
     llm_api_key: str = ""
@@ -244,6 +253,10 @@ class PipelineSettings:
 class RealPipelineRunner(PipelineRunner):
     def __init__(self, settings: PipelineSettings) -> None:
         self._settings = settings
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def preflight(
         self,
@@ -850,6 +863,8 @@ class RealPipelineRunner(PipelineRunner):
             return self._transcribe_with_siliconflow(audio_path, duration, emit)
         if provider == "multimodal":
             return self._transcribe_with_multimodal(audio_path, duration, emit)
+        if provider == "funasr":
+            return self._transcribe_with_funasr(audio_path, duration, emit)
         return self._transcribe_with_local_whisper(audio_path, duration, emit)
 
     def _transcribe_with_local_whisper(
@@ -1342,6 +1357,118 @@ class RealPipelineRunner(PipelineRunner):
         )
         return self._render_transcript_from_segments(segments), segments
 
+    def _transcribe_with_funasr(
+        self,
+        audio_path: Path,
+        duration: float | None,
+        emit: Callable[[str, int, str, dict[str, object] | None], None],
+    ) -> tuple[str, list[dict[str, object]]]:
+        if not self._settings.funasr_available:
+            raise TranscriptionConfigurationError(
+                "FunASR is not installed in the current runtime. Install FunASR from Settings or switch to another provider."
+            )
+
+        attempts = [
+            {
+                "model": self._settings.funasr_model,
+                "device": self._settings.funasr_device,
+                "vad_model": self._settings.funasr_vad_model,
+                "punc_model": self._settings.funasr_punc_model,
+                "spk_model": self._settings.funasr_spk_model,
+                "hub": self._settings.funasr_hub,
+                "hotword": self._settings.funasr_hotword,
+                "message": f"正在加载 FunASR 模型 {self._settings.funasr_model}",
+            }
+        ]
+
+        if self._settings.funasr_device == "cpu":
+            attempts.append(
+                {
+                    "model": self._settings.funasr_model,
+                    "device": "cpu",
+                    "vad_model": "",
+                    "punc_model": "",
+                    "spk_model": "",
+                    "hub": self._settings.funasr_hub,
+                    "hotword": self._settings.funasr_hotword,
+                    "message": f"兼容模式重试，正在加载 FunASR 模型 {self._settings.funasr_model}（禁用 VAD/PUNC）",
+                }
+            )
+        elif self._settings.funasr_device == "cuda":
+            attempts.append(
+                {
+                    "model": self._settings.funasr_model,
+                    "device": "cpu",
+                    "vad_model": "",
+                    "punc_model": "",
+                    "spk_model": "",
+                    "hub": self._settings.funasr_hub,
+                    "hotword": self._settings.funasr_hotword,
+                    "message": f"GPU 模式异常，自动回退 CPU 重试...",
+                }
+            )
+
+        last_error: VideoSumError | None = None
+        for index, attempt in enumerate(attempts):
+            emit(
+                "transcribing",
+                52,
+                str(attempt["message"]),
+                {
+                    "model": attempt["model"],
+                    "device": attempt["device"],
+                    "vad_model": attempt.get("vad_model", ""),
+                    "punc_model": attempt.get("punc_model", ""),
+                    "attempt": index + 1,
+                },
+            )
+            logger.info(
+                "launch funasr subprocess attempt=%s model=%s device=%s vad=%s punc=%s audio=%s",
+                index + 1,
+                attempt["model"],
+                attempt["device"],
+                attempt.get("vad_model", ""),
+                attempt.get("punc_model", ""),
+                audio_path,
+            )
+            emit("transcribing", 58, "开始转写音频内容")
+            try:
+                transcript, segments = self._run_funasr_subprocess(
+                    audio_path=audio_path,
+                    duration=duration,
+                    emit=emit,
+                    model_name=str(attempt["model"]),
+                    device=str(attempt["device"]),
+                    vad_model=str(attempt.get("vad_model", "")),
+                    punc_model=str(attempt.get("punc_model", "")),
+                    spk_model=str(attempt.get("spk_model", "")),
+                    hub=str(attempt.get("hub", "ms")),
+                    hotword=str(attempt.get("hotword", "")),
+                )
+                logger.info(
+                    "funasr transcription finished audio=%s segments=%d transcript_chars=%d attempt=%s",
+                    audio_path,
+                    len(segments),
+                    len(transcript),
+                    index + 1,
+                )
+                return transcript, segments
+            except VideoSumError as exc:
+                last_error = exc
+                is_last_attempt = index == len(attempts) - 1
+                if is_last_attempt or not self._should_retry_transcription(exc):
+                    raise
+                emit("transcribing", 56, "转写引擎异常，正在切换兼容模式重试")
+            except RuntimeError as exc:
+                msg = str(exc).lower()
+                if "lock" in msg or "waiting" in msg:
+                    raise VideoSumError(
+                        f"可能由于多个任务同时下载模型导致锁竞争，请稍后重试: {exc}"
+                    ) from exc
+                raise
+
+        raise last_error or VideoSumError("FunASR transcription failed.")
+
     def _build_fallback_segments_from_transcript(
         self,
         transcript: str,
@@ -1485,28 +1612,76 @@ class RealPipelineRunner(PipelineRunner):
                 **_windows_hidden_subprocess_kwargs(),
             )
 
+        # Drain stdout/stderr in background threads to prevent pipe buffer deadlock.
+        _whisper_stdout_lines: list[str] = []
+        _whisper_stderr_lines: list[str] = []
+
+        def _drain_pipe(pipe, sink: list[str]) -> None:
+            if pipe is None:
+                return
+            try:
+                for line in pipe:
+                    sink.append(line)
+            except (ValueError, OSError):
+                pass
+
+        _drain_stdout_thread = threading.Thread(target=_drain_pipe, args=(process.stdout, _whisper_stdout_lines), daemon=True)
+        _drain_stderr_thread = threading.Thread(target=_drain_pipe, args=(process.stderr, _whisper_stderr_lines), daemon=True)
+        _drain_stdout_thread.start()
+        _drain_stderr_thread.start()
+
+        _whisper_last_reported_stderr = -1
+
+        def _emit_whisper_stderr_progress() -> None:
+            nonlocal _whisper_last_reported_stderr
+            total = len(_whisper_stderr_lines)
+            if total <= _whisper_last_reported_stderr:
+                return
+            last = _whisper_last_reported_stderr
+            _whisper_last_reported_stderr = total
+            fresh = [line.strip() for line in _whisper_stderr_lines[last:] if line.strip()]
+            if not fresh:
+                return
+            text = fresh[-1]
+            if len(text) > 200:
+                text = text[:200] + "..."
+            emit("transcribing", 59, f"Whisper: {text}")
+
+        emit("transcribing", 58, "正在启动转写子进程...")
+
         progress_offset = 0
         timeout_seconds = max(30 * 60, int((duration or 0) * 8) + 10 * 60)
         deadline = time.monotonic() + timeout_seconds
         while process.poll() is None:
+            prev_offset = progress_offset
             progress_offset = self._replay_transcription_progress(progress_path, progress_offset, emit)
+            if progress_offset == prev_offset:
+                _emit_whisper_stderr_progress()
+            else:
+                _whisper_last_reported_stderr = len(_whisper_stderr_lines)
             if time.monotonic() > deadline:
                 process.kill()
-                stdout, stderr = process.communicate()
+                _drain_stdout_thread.join(timeout=2)
+                _drain_stderr_thread.join(timeout=2)
+                stdout = "".join(_whisper_stdout_lines).strip()
+                stderr = "".join(_whisper_stderr_lines).strip()
                 logger.error(
                     "transcription subprocess timeout audio=%s model=%s device=%s compute_type=%s stdout=%s stderr=%s",
                     audio_path,
                     model_name,
                     device,
                     compute_type,
-                    stdout.strip(),
-                    stderr.strip(),
+                    stdout[-1500:],
+                    stderr[-1500:],
                 )
                 raise VideoSumError("Transcription subprocess timed out.")
             time.sleep(0.2)
 
         progress_offset = self._replay_transcription_progress(progress_path, progress_offset, emit)
-        stdout, stderr = process.communicate()
+        _drain_stdout_thread.join(timeout=5)
+        _drain_stderr_thread.join(timeout=5)
+        stdout = "".join(_whisper_stdout_lines).strip()
+        stderr = "".join(_whisper_stderr_lines).strip()
         if process.returncode != 0:
             # 检查是否是 CUDA 清理时的访问冲突，但输出文件已成功写入
             is_native_crash = self._is_native_crash_returncode(process.returncode)
@@ -1588,6 +1763,264 @@ class RealPipelineRunner(PipelineRunner):
                 device,
                 "--compute-type",
                 compute_type,
+                "--progress-path",
+                str(progress_path),
+                "--output-path",
+                str(output_path),
+            ]
+        )
+        return command
+
+    def _run_funasr_subprocess(
+        self,
+        audio_path: Path,
+        duration: float | None,
+        emit: Callable[[str, int, str, dict[str, object] | None], None],
+        model_name: str,
+        device: str,
+        vad_model: str,
+        punc_model: str,
+        spk_model: str,
+        hub: str,
+        hotword: str,
+    ) -> tuple[str, list[dict[str, object]]]:
+        progress_path = audio_path.with_name("funasr_worker_progress.jsonl")
+        output_path = audio_path.with_name("funasr_worker_result.json")
+        if progress_path.exists():
+            progress_path.unlink()
+        if output_path.exists():
+            output_path.unlink()
+
+        command = self._build_funasr_command(
+            audio_path=audio_path,
+            model_name=model_name,
+            device=device,
+            vad_model=vad_model,
+            punc_model=punc_model,
+            spk_model=spk_model,
+            hub=hub,
+            hotword=hotword,
+            progress_path=progress_path,
+            output_path=output_path,
+        )
+        if duration is not None:
+            command.extend(["--duration", str(duration)])
+
+        env = os.environ.copy()
+        for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "__PYVENV_LAUNCHER__"):
+            env.pop(key, None)
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        pythonpath_entries = [str(path) for path in runtime_pythonpath_dirs(self._settings.runtime_channel)]
+        if pythonpath_entries:
+            env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+        runtime_paths = [str(path) for path in runtime_library_dirs(self._settings.runtime_channel)]
+        ffmpeg_exe = ffmpeg_location()
+        if ffmpeg_exe is not None:
+            runtime_paths.append(str(ffmpeg_exe.parent))
+        env["VIDEO_SUM_DLL_PATHS"] = os.pathsep.join(runtime_paths)
+        merged_path: list[str] = []
+        for entry in [*runtime_paths, *(env.get("PATH", "").split(os.pathsep))]:
+            item = entry.strip()
+            if item and item not in merged_path:
+                merged_path.append(item)
+        env["PATH"] = os.pathsep.join(merged_path)
+        with sanitized_subprocess_dll_search():
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                cwd=str(audio_path.parent),
+                **_windows_hidden_subprocess_kwargs(),
+            )
+
+        # Drain stdout/stderr in background threads to prevent pipe buffer deadlock.
+        # FunASR / PyTorch emit large volumes of log to stderr; if the pipe fills
+        # up the child process blocks on write() and appears to hang forever.
+        _funasr_stdout_lines: list[str] = []
+        _funasr_stderr_lines: list[str] = []
+
+        def _drain_pipe(pipe, sink: list[str]) -> None:
+            if pipe is None:
+                return
+            try:
+                for line in pipe:
+                    sink.append(line)
+            except (ValueError, OSError):
+                pass
+
+        _drain_stdout_thread = threading.Thread(target=_drain_pipe, args=(process.stdout, _funasr_stdout_lines), daemon=True)
+        _drain_stderr_thread = threading.Thread(target=_drain_pipe, args=(process.stderr, _funasr_stderr_lines), daemon=True)
+        _drain_stdout_thread.start()
+        _drain_stderr_thread.start()
+
+        # Report subprocess stderr as progress while waiting for the child
+        # to write to the structured progress file.  FunASR / PyTorch emit
+        # model-download percentage and loading stages on stderr long before
+        # any progress JSONL line appears.
+        _funasr_last_reported_stderr = -1
+
+        def _emit_stderr_progress() -> None:
+            nonlocal _funasr_last_reported_stderr
+            total = len(_funasr_stderr_lines)
+            if total <= _funasr_last_reported_stderr:
+                return
+            last = _funasr_last_reported_stderr
+            _funasr_last_reported_stderr = total
+            fresh = [line.strip() for line in _funasr_stderr_lines[last:] if line.strip()]
+            if not fresh:
+                return
+            text = fresh[-1]
+            if len(text) > 200:
+                text = text[:200] + "..."
+            emit("transcribing", 59, f"FunASR: {text}")
+
+        # Immediate feedback — do NOT silently wait on a cold subprocess
+        emit("transcribing", 58, "正在启动 FunASR 子进程，首次运行需下载模型（约 500MB），请耐心等待...")
+
+        progress_offset = 0
+        timeout_seconds = max(30 * 60, int((duration or 0) * 8) + 10 * 60)
+        deadline = time.monotonic() + timeout_seconds
+        stall_start = time.monotonic()
+        stall_timeout = 600  # 10 minutes with no progress -> abort
+        while process.poll() is None:
+            if self._cancelled:
+                process.kill()
+                process.wait(timeout=5)
+                raise VideoSumError("Task cancelled by user.")
+            prev_offset = progress_offset
+            progress_offset = self._replay_transcription_progress(progress_path, progress_offset, emit)
+            if progress_offset == prev_offset:
+                _emit_stderr_progress()
+            else:
+                _funasr_last_reported_stderr = len(_funasr_stderr_lines)
+            # Stall detection: if the subprocess produces zero progress
+            # for too long it is probably stuck (waiting for a lock, failed
+            # download, etc.) — abort early instead of waiting the full 30 min.
+            if progress_offset == 0:
+                if time.monotonic() - stall_start > stall_timeout:
+                    process.kill()
+                    raise VideoSumError(
+                        "FunASR subprocess produced no progress after 10 minutes. "
+                        "Check network or ModelScope availability."
+                    )
+            else:
+                stall_start = time.monotonic()
+            if time.monotonic() > deadline:
+                process.kill()
+                _drain_stdout_thread.join(timeout=2)
+                _drain_stderr_thread.join(timeout=2)
+                stdout = "".join(_funasr_stdout_lines).strip()
+                stderr = "".join(_funasr_stderr_lines).strip()
+                logger.error(
+                    "funasr subprocess timeout audio=%s model=%s device=%s stdout=%s stderr=%s",
+                    audio_path,
+                    model_name,
+                    device,
+                    stdout[-1500:],
+                    stderr[-1500:],
+                )
+                raise VideoSumError("FunASR subprocess timed out.")
+            time.sleep(0.2)
+
+        progress_offset = self._replay_transcription_progress(progress_path, progress_offset, emit)
+        _drain_stdout_thread.join(timeout=5)
+        _drain_stderr_thread.join(timeout=5)
+        stdout = "".join(_funasr_stdout_lines).strip()
+        stderr = "".join(_funasr_stderr_lines).strip()
+        if process.returncode != 0:
+            is_native_crash = self._is_native_crash_returncode(process.returncode)
+            output_valid = output_path.exists()
+            if output_valid:
+                try:
+                    payload = json.loads(output_path.read_text(encoding="utf-8"))
+                    transcript = str(payload.get("transcript") or "")
+                    segments = list(payload.get("segments") or [])
+                    if transcript.strip() and segments:
+                        logger.warning(
+                            "funasr subprocess crashed during cleanup but output is valid "
+                            "audio=%s model=%s device=%s returncode=%s segments=%d transcript_chars=%d",
+                            audio_path,
+                            model_name,
+                            device,
+                            process.returncode,
+                            len(segments),
+                            len(transcript),
+                        )
+                        return transcript, segments
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            logger.error(
+                "funasr subprocess failed audio=%s model=%s device=%s returncode=%s stdout=%s stderr=%s",
+                audio_path,
+                model_name,
+                device,
+                process.returncode,
+                stdout.strip(),
+                stderr.strip(),
+            )
+            native_hint = ""
+            if is_native_crash:
+                native_hint = " The FunASR runtime crashed at the native library level."
+            raise VideoSumError(
+                f"FunASR subprocess failed with exit code {process.returncode}."
+                f"{native_hint} Runtime={device} model={model_name}."
+            )
+        if stderr.strip():
+            logger.info("funasr subprocess stderr audio=%s stderr=%s", audio_path, stderr.strip())
+        if not output_path.exists():
+            raise VideoSumError("FunASR subprocess completed without output.")
+
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        transcript = str(payload.get("transcript") or "")
+        segments = list(payload.get("segments") or [])
+        if not transcript.strip():
+            raise VideoSumError("FunASR transcription produced empty output.")
+        return transcript, segments
+
+    def _build_funasr_command(
+        self,
+        audio_path: Path,
+        model_name: str,
+        device: str,
+        vad_model: str,
+        punc_model: str,
+        spk_model: str,
+        hub: str,
+        hotword: str,
+        progress_path: Path,
+        output_path: Path,
+    ) -> list[str]:
+        runtime_python = runtime_python_executable(self._settings.runtime_channel)
+        if runtime_python is None:
+            raise VideoSumError(
+                f"Managed runtime python is unavailable for channel '{self._settings.runtime_channel}'."
+            )
+        command = [str(runtime_python), "-m", "video_sum_core.transcribe_funasr_subprocess"]
+
+        command.extend(
+            [
+                "--audio-path",
+                str(audio_path),
+                "--model",
+                model_name,
+                "--device",
+                device,
+                "--vad-model",
+                vad_model,
+                "--punc-model",
+                punc_model,
+                "--spk-model",
+                spk_model,
+                "--hub",
+                hub,
+                "--hotword",
+                hotword,
                 "--progress-path",
                 str(progress_path),
                 "--output-path",

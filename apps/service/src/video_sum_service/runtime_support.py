@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from email.parser import Parser
 import importlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import threading
 import textwrap
 import venv
 from dataclasses import fields
@@ -230,6 +233,119 @@ def run_host_command(command: list[str], timeout: int = 3600) -> subprocess.Comp
 
 def uses_current_service_python(runtime_channel: str) -> bool:
     return not is_frozen() and runtime_channel == "base"
+
+
+# ---------------------------------------------------------------------------
+# Install log streaming — real-time pip output visible to the UI
+# ---------------------------------------------------------------------------
+
+_install_log_dir = Path(tempfile.gettempdir()) / "bilisum_install_logs"
+_install_sessions: dict[str, dict[str, object]] = {}
+
+
+def _install_log_path(session_id: str) -> Path:
+    return _install_log_dir / f"{session_id}.log"
+
+
+def _ensure_install_log_dir() -> None:
+    _install_log_dir.mkdir(parents=True, exist_ok=True)
+
+
+def start_install_session(session_id: str, label: str) -> None:
+    _ensure_install_log_dir()
+    _install_sessions[session_id] = {
+        "label": label,
+        "started_at": __import__("time").time(),
+        "done": False,
+        "success": False,
+    }
+    log = _install_log_path(session_id)
+    log.write_text(f"[{label}] 开始安装...\n", encoding="utf-8")
+
+
+def finish_install_session(session_id: str, success: bool) -> None:
+    meta = _install_sessions.get(session_id)
+    if meta is not None:
+        meta["done"] = True
+        meta["success"] = success
+    log = _install_log_path(session_id)
+    status = "完成" if success else "失败"
+    with log.open("a", encoding="utf-8") as f:
+        f.write(f"\n[{meta.get('label', '') if meta else ''}] 安装{status}。\n")
+
+
+def append_install_log(session_id: str, line: str) -> None:
+    log = _install_log_path(session_id)
+    with log.open("a", encoding="utf-8") as f:
+        f.write(line.rstrip("\n\r") + "\n")
+
+
+def read_install_log(session_id: str, tail_bytes: int = 8192) -> dict[str, object]:
+    meta = _install_sessions.get(session_id, {})
+    log = _install_log_path(session_id)
+    content = ""
+    if log.exists():
+        raw = log.read_bytes()
+        content = raw[-tail_bytes:].decode("utf-8", errors="replace")
+    return {
+        "sessionId": session_id,
+        "label": meta.get("label", ""),
+        "done": meta.get("done", False),
+        "success": meta.get("success", False),
+        "log": content,
+    }
+
+
+class _StreamingRunner:
+    """Callable runner that streams subprocess output to an install log.
+
+    Stores a reference to the underlying :class:`subprocess.Popen` so that
+    :meth:`cancel` can kill the subprocess if an exception occurs mid-install.
+    """
+
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self._proc: subprocess.Popen[str] | None = None
+
+    def __call__(self, command: list[str], runtime_channel: str, timeout: int = 3600) -> subprocess.CompletedProcess[str]:
+        env = runtime_subprocess_env(runtime_channel)
+        cwd = managed_runtime_dir(runtime_channel)
+        append_install_log(self.session_id, f"$ {' '.join(command)}\n")
+
+        with sanitized_subprocess_dll_search():
+            self._proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                cwd=cwd,
+                **windows_hidden_subprocess_kwargs(),
+            )
+
+        stdout_lines: list[str] = []
+        assert self._proc.stdout is not None
+        for line in self._proc.stdout:
+            stdout_lines.append(line)
+            append_install_log(self.session_id, line)
+
+        self._proc.wait(timeout=timeout)
+        combined = "".join(stdout_lines)
+        if self._proc.returncode != 0:
+            raise subprocess.CalledProcessError(self._proc.returncode, command, output=combined, stderr="")
+        return subprocess.CompletedProcess(command, self._proc.returncode, stdout=combined, stderr="")
+
+    def cancel(self):
+        """Kill the underlying subprocess if it is still running."""
+        if self._proc is not None and self._proc.poll() is None:
+            append_install_log(self.session_id, "\n[安装已取消]\n")
+            self._proc.kill()
+            try:
+                self._proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
 
 
 def _environment_probe_cache_path() -> Path:
@@ -1151,6 +1267,14 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
             payload["localAsrAvailable"] = True
         except importlib.metadata.PackageNotFoundError:
             pass
+        try:
+            payload["funasrVersion"] = importlib.metadata.version("funasr")
+            payload["funasrInstalled"] = True
+            payload["funasrAvailable"] = True
+        except importlib.metadata.PackageNotFoundError:
+            payload["funasrVersion"] = ""
+            payload["funasrInstalled"] = False
+            payload["funasrAvailable"] = False
         chromadb_installed, chromadb_version, chromadb_error = importable_distribution("chromadb", "chromadb")
         payload["chromadbVersion"] = chromadb_version
         payload["chromadbInstalled"] = chromadb_installed
@@ -1299,6 +1423,14 @@ def build_worker(
         "multimodal_asr_api_key": runtime_settings.multimodal_asr_api_key,
         "multimodal_asr_chunk_duration_seconds": runtime_settings.multimodal_asr_chunk_duration_seconds,
         "multimodal_asr_max_retries": runtime_settings.multimodal_asr_max_retries,
+        "funasr_available": bool(environment.get("funasrAvailable")),
+        "funasr_model": runtime_settings.funasr_model,
+        "funasr_device": runtime_settings.funasr_device,
+        "funasr_vad_model": runtime_settings.funasr_vad_model,
+        "funasr_punc_model": runtime_settings.funasr_punc_model,
+        "funasr_spk_model": runtime_settings.funasr_spk_model,
+        "funasr_hub": runtime_settings.funasr_hub,
+        "funasr_hotword": runtime_settings.funasr_hotword,
         "llm_enabled": runtime_settings.llm_enabled,
         "llm_provider": runtime_settings.llm_provider,
         "llm_api_key": runtime_settings.llm_api_key,
@@ -1399,6 +1531,16 @@ def serialize_settings(
         "multimodal_asr_model": current_settings.multimodal_asr_model,
         "multimodal_asr_api_key": "",
         "multimodal_asr_api_key_configured": bool(current_settings.multimodal_asr_api_key),
+        "multimodal_asr_chunk_duration_seconds": current_settings.multimodal_asr_chunk_duration_seconds,
+        "multimodal_asr_max_retries": current_settings.multimodal_asr_max_retries,
+        "funasr_model": current_settings.funasr_model,
+        "funasr_device": current_settings.funasr_device,
+        "funasr_vad_model": current_settings.funasr_vad_model,
+        "funasr_punc_model": current_settings.funasr_punc_model,
+        "funasr_spk_model": current_settings.funasr_spk_model,
+        "funasr_hub": current_settings.funasr_hub,
+        "funasr_hotword": current_settings.funasr_hotword,
+        "funasr_available": environment.get("funasrAvailable", False),
         "cuda_variant": current_settings.cuda_variant,
         "runtime_channel": current_settings.runtime_channel,
         "output_dir": str(current_settings.output_dir),
@@ -1513,13 +1655,18 @@ def install_cuda_support(cuda_variant: str, repository: SqliteTaskRepository) ->
     }, worker
 
 
-def install_local_asr(reinstall: bool, repository: SqliteTaskRepository) -> tuple[dict[str, object], TaskWorker]:
+def install_local_asr(reinstall: bool, repository: SqliteTaskRepository, *, session_id: str | None = None) -> tuple[dict[str, object], TaskWorker]:
     current_settings = settings_manager.current
     runtime_channel = normalize_runtime_channel(current_settings.runtime_channel, allow_unknown_gpu=True)
     runtime_dir = ensure_runtime_channel(runtime_channel)
     python_executable = runtime_python_executable(runtime_channel)
     if runtime_dir is None or python_executable is None:
         raise HTTPException(status_code=500, detail="Managed runtime is unavailable.")
+
+    use_streaming = session_id is not None
+    if use_streaming:
+        start_install_session(session_id, "本地 ASR")
+    runner = _StreamingRunner(session_id) if use_streaming else run_command
 
     try:
         install_workspace_packages(python_executable, runtime_channel=runtime_channel)
@@ -1531,12 +1678,18 @@ def install_local_asr(reinstall: bool, repository: SqliteTaskRepository) -> tupl
             package_label="本地 ASR 依赖",
             reinstall=reinstall,
             timeout=1800,
-            runner=run_command,
+            runner=runner,
         )
     except subprocess.CalledProcessError as exc:
+        if isinstance(runner, _StreamingRunner):
+            runner.cancel()
+            finish_install_session(session_id, success=False)
         clear_environment_probe_cache(runtime_channel)
         raise HTTPException(status_code=500, detail=((exc.stderr or exc.stdout or str(exc))[-1500:])) from exc
     except HTTPException:
+        if isinstance(runner, _StreamingRunner):
+            runner.cancel()
+            finish_install_session(session_id, success=False)
         clear_environment_probe_cache(runtime_channel)
         raise
 
@@ -1552,9 +1705,87 @@ def install_local_asr(reinstall: bool, repository: SqliteTaskRepository) -> tupl
             "localAsrVersion": str(environment.get("localAsrVersion") or ""),
         },
     )
+    installed = bool(environment.get("localAsrInstalled"))
+    if use_streaming:
+        finish_install_session(session_id, success=installed)
     return {
-        "installed": bool(environment.get("localAsrInstalled")),
+        "installed": installed,
         "runtimeChannel": runtime_channel,
+        "installSessionId": session_id,
+        "stdoutTail": ((result.stdout or "") + "\n" + (result.stderr or "")).strip()[-1500:],
+        "environment": environment,
+    }, worker
+
+
+def install_funasr(reinstall: bool, repository: SqliteTaskRepository, *, session_id: str | None = None) -> tuple[dict[str, object], TaskWorker]:
+    current_settings = settings_manager.current
+    runtime_channel = normalize_runtime_channel(current_settings.runtime_channel, allow_unknown_gpu=True)
+    runtime_dir = ensure_runtime_channel(runtime_channel)
+    python_executable = runtime_python_executable(runtime_channel)
+    if runtime_dir is None or python_executable is None:
+        raise HTTPException(status_code=500, detail="Managed runtime is unavailable.")
+
+    # W10: disk space pre-check
+    cache_dir = Path.home() / ".cache" / "modelscope"
+    if cache_dir.parent.exists():
+        free = shutil.disk_usage(cache_dir.parent).free
+        if free < 2 * 1024 * 1024 * 1024:  # < 2GB
+            raise HTTPException(
+                status_code=507,
+                detail="磁盘空间不足（需要至少 2GB）。当前可用: {:.1f}GB".format(free / (1024**3)),
+            )
+
+    use_streaming = session_id is not None
+    if use_streaming:
+        start_install_session(session_id, "FunASR")
+    runner = _StreamingRunner(session_id) if use_streaming else run_command
+
+    try:
+        # W3: GPU runtime skip workspace reinstall to avoid CUDA version conflicts
+        if "gpu" not in runtime_channel:
+            install_workspace_packages(python_executable, runtime_channel=runtime_channel)
+        ensure_runtime_pip(python_executable, runtime_channel)
+        result = pip_install_with_fallbacks(
+            python_executable,
+            runtime_channel,
+            ["funasr>=1.1.0"],
+            package_label="FunASR 依赖",
+            reinstall=reinstall,
+            timeout=3600,
+            runner=runner,
+        )
+    except subprocess.CalledProcessError as exc:
+        if isinstance(runner, _StreamingRunner):
+            runner.cancel()
+            finish_install_session(session_id, success=False)
+        clear_environment_probe_cache(runtime_channel)
+        raise HTTPException(status_code=500, detail=((exc.stderr or exc.stdout or str(exc))[-1500:])) from exc
+    except HTTPException:
+        if isinstance(runner, _StreamingRunner):
+            runner.cancel()
+            finish_install_session(session_id, success=False)
+        clear_environment_probe_cache(runtime_channel)
+        raise
+
+    clear_environment_probe_cache(runtime_channel)
+    environment = detect_environment(runtime_channel)
+    worker = build_worker(repository, current_settings, environment_info=environment)
+    write_runtime_metadata(
+        runtime_channel,
+        {
+            "runtimeChannel": runtime_channel,
+            "python": str(python_executable),
+            "funasrInstalled": bool(environment.get("funasrInstalled")),
+            "funasrVersion": str(environment.get("funasrVersion") or ""),
+        },
+    )
+    installed = bool(environment.get("funasrInstalled"))
+    if use_streaming:
+        finish_install_session(session_id, success=installed)
+    return {
+        "installed": installed,
+        "runtimeChannel": runtime_channel,
+        "installSessionId": session_id,
         "stdoutTail": ((result.stdout or "") + "\n" + (result.stderr or "")).strip()[-1500:],
         "environment": environment,
     }, worker

@@ -1726,14 +1726,33 @@ async function startBackend(): Promise<BackendStatus> {
     return { ...backendStatus, ready };
   }
 
-  if (isDev && await probeBackendReady(300)) {
-    updateBackendStatus({
-      running: true,
-      ready: true,
-      pid: null,
-      lastError: "",
-    });
-    return { ...backendStatus, running: true, ready: true, pid: null, lastError: "" };
+  if (isDev) {
+    // dev 模式下先尝试复用已有后端（用户可能手动启动了 uv run / python -m video_sum_service）
+    const noBackend = process.env.BILISUM_NO_BACKEND === "1";
+    if (noBackend) {
+      console.log("[Backend] BILISUM_NO_BACKEND=1, skipping backend auto-start.");
+      updateBackendStatus({
+        running: false,
+        ready: false,
+        pid: null,
+        lastError: "",
+      });
+      return backendStatus;
+    }
+
+    // 重试探测已有后端（每次 800ms，最多 4 次 ≈ 3.2s），避免因后端启动慢而误判
+    if (await probeBackendReady(800)) {
+      updateBackendStatus({ running: true, pid: null });
+      return { ...backendStatus, running: true, ready: true, pid: null, lastError: "" };
+    }
+    for (let i = 0; i < 3; i++) {
+      console.log("[Backend] Probe retry %d/3 for existing backend...", i + 1);
+      if (await probeBackendReady(800)) {
+        updateBackendStatus({ running: true, pid: null });
+        return { ...backendStatus, running: true, ready: true, pid: null, lastError: "" };
+      }
+    }
+    // 后端不可用 → 继续走本函数的自动 spawn 逻辑
   }
   if (!isDev && await probeBackendPortBusy(300)) {
     const message = "BiliSum 服务端口已被占用，请退出旧版 BiliSum 后重试。";

@@ -194,6 +194,15 @@ export function getConfigHealth(
     });
   }
 
+  if (transcriptionProvider === "funasr" && environment?.funasrAvailable === false) {
+    issues.push({
+      key: "funasr_runtime",
+      title: "FunASR 运行环境未就绪",
+      description: "当前使用 FunASR 转写，但 FunASR 尚未安装。请前往「运行环境」→「FunASR 运行环境」安装，或切回其他转写方式。",
+      severity: "critical",
+    });
+  }
+
   const llmMissingParts: string[] = [];
   if (settings.llm_enabled) {
     if (!mainLlmApiKeyReady) {

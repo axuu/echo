@@ -208,6 +208,7 @@ const SETTINGS_SEARCH_ITEMS: SettingsSearchItem[] = [
   { category: "video", targetKey: "ytdlp_cookies_file", title: "yt-dlp Cookies 文件", description: "配置 B 站登录态 cookies.txt。", keywords: ["cookie", "cookies", "b站", "登录", "风控", "412"] },
   { category: "runtime", targetKey: "runtime_status", title: "运行环境状态", description: "检查 Python、Torch、CUDA 与扩展依赖。", keywords: ["运行环境", "环境", "torch", "python", "cuda"] },
   { category: "runtime", targetKey: "local_asr_runtime", title: "本地 ASR 运行环境", description: "安装或检查本地 ASR 依赖。", keywords: ["本地", "asr", "whisper", "安装"] },
+  { category: "runtime", targetKey: "funasr_runtime", title: "FunASR 运行环境", description: "安装或检查 FunASR 依赖（中文效果优于 Whisper）。", keywords: ["funasr", "qwen", "asr", "安装", "中文"] },
   { category: "logs", targetKey: "service_logs", title: "服务日志", description: "查看后端服务日志。", keywords: ["日志", "log", "报错", "服务"] },
   { category: "updates", targetKey: "app_updates", title: "应用更新", description: "检查桌面应用新版本。", keywords: ["更新", "版本", "update", "release"] },
 ];
@@ -265,6 +266,9 @@ export function SettingsPage({
   const [localAsrStatus, setLocalAsrStatus] = useState("");
   const [localAsrOutput, setLocalAsrOutput] = useState("");
   const [localAsrInstalling, setLocalAsrInstalling] = useState(false);
+  const [funasrStatus, setFunasrStatus] = useState("");
+  const [funasrOutput, setFunasrOutput] = useState("");
+  const [funasrInstalling, setFunasrInstalling] = useState(false);
   const [bilibiliCookieCapturing, setBilibiliCookieCapturing] = useState(false);
   const [bilibiliCookieStatus, setBilibiliCookieStatus] = useState("");
   const [bilibiliQrcodeKey, setBilibiliQrcodeKey] = useState("");
@@ -964,9 +968,11 @@ export function SettingsPage({
   const asrReady =
     form?.transcription_provider === "local"
       ? Boolean(environment?.localAsrAvailable)
-      : form?.transcription_provider === "multimodal"
-        ? Boolean(form?.multimodal_asr_api_key_configured && String(form?.multimodal_asr_base_url || "").trim() && String(form?.multimodal_asr_model || "").trim())
-        : Boolean(form?.siliconflow_asr_api_key_configured);
+      : form?.transcription_provider === "funasr"
+        ? Boolean(environment?.funasrAvailable)
+        : form?.transcription_provider === "multimodal"
+          ? Boolean(form?.multimodal_asr_api_key_configured && String(form?.multimodal_asr_base_url || "").trim() && String(form?.multimodal_asr_model || "").trim())
+          : Boolean(form?.siliconflow_asr_api_key_configured);
   const updateUnsupported = isUpdateUnsupported(updateInfo);
   const updateStatusLabel = getUpdateStatusLabel(updateInfo);
   const updateStatusTone = getUpdateStatusTone(updateInfo);
@@ -1080,6 +1086,7 @@ export function SettingsPage({
 
   const usesSiliconFlowAsr = form.transcription_provider === "siliconflow";
   const usesMultimodalAsr = form.transcription_provider === "multimodal";
+  const usesFunAsr = form.transcription_provider === "funasr";
   const recommendedTaskConcurrency = form.transcription_provider === "local" ? 1 : 2;
   const performanceRecommendation = recommendedTaskConcurrency === 1
     ? "当前建议：本地 ASR / CPU 场景任务并发数设为 1，导图并发数设为 1。"
@@ -1087,6 +1094,14 @@ export function SettingsPage({
   const queuedTaskCount = taskList.filter((task) => task.status === "queued").length;
   const runningTaskCount = taskList.filter((task) => task.status === "running").length;
   const localAsrInstalled = Boolean(environment?.localAsrInstalled);
+  const funasrInstalled = Boolean(environment?.funasrInstalled);
+
+  useEffect(() => {
+    if (!funasrInstalled && form?.transcription_provider === "funasr") {
+      setForm({ ...form, transcription_provider: "siliconflow" });
+    }
+  }, [funasrInstalled]);
+
   const knowledgeDepsReady = Boolean(environment?.knowledgeDependenciesReady);
   const missingKnowledgeDeps = [
     environment?.chromadbInstalled ? null : "chromadb",
@@ -1401,13 +1416,25 @@ export function SettingsPage({
 
   async function installLocalAsr() {
     if (!form) return;
+    const sessionId = `local-asr-${Date.now()}`;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
     try {
       setLocalAsrInstalling(true);
       setLocalAsrStatus("正在安装本地语音识别环境...");
       setLocalAsrOutput("");
-      const response = await api.installLocalAsr();
+      // Start polling install log
+      pollTimer = setInterval(async () => {
+        try {
+          const log = await api.getInstallLog(sessionId);
+          if (log.log) setLocalAsrOutput(log.log);
+          if (log.done && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        } catch { /* ignore poll errors */ }
+      }, 1500);
+      const response = await api.installLocalAsr({ installSessionId: sessionId });
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      // Final log fetch
+      try { const log = await api.getInstallLog(sessionId); if (log.log) setLocalAsrOutput(log.log); } catch { /* ignore */ }
       setLocalAsrStatus(response.installed ? "本地语音识别环境已安装" : "本地语音识别环境安装失败");
-      setLocalAsrOutput(response.stdoutTail || "");
       const nextEnvironment = response.environment || (await api.getEnvironment({ runtimeChannel: form.runtime_channel, refresh: true }));
       setEnvironment(nextEnvironment);
       if (response.installed) {
@@ -1426,9 +1453,58 @@ export function SettingsPage({
       }
       onRefresh();
     } catch (error) {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       setLocalAsrStatus(error instanceof Error ? error.message : "安装本地语音识别环境失败");
     } finally {
       setLocalAsrInstalling(false);
+    }
+  }
+
+  async function installFunAsr() {
+    if (!form) return;
+    const sessionId = `funasr-${Date.now()}`;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    try {
+      setFunasrInstalling(true);
+      setFunasrStatus("正在安装 FunASR 语音识别环境（含 torch 等依赖，可能需要较长时间）...");
+      setFunasrOutput("");
+      // Start polling install log
+      pollTimer = setInterval(async () => {
+        try {
+          const log = await api.getInstallLog(sessionId);
+          if (log.log) setFunasrOutput(log.log);
+          if (log.done && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        } catch (e) {
+          setFunasrOutput(prev => prev + `\n[轮询异常: ${e instanceof Error ? e.message : 'network error'}]`);
+        }
+      }, 1500);
+      const response = await api.installFunAsr({ installSessionId: sessionId });
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      // Final log fetch
+      try { const log = await api.getInstallLog(sessionId); if (log.log) setFunasrOutput(log.log); } catch { /* ignore */ }
+      setFunasrStatus(response.installed ? "FunASR 语音识别环境已安装" : "FunASR 语音识别环境安装失败");
+      const nextEnvironment = response.environment || (await api.getEnvironment({ runtimeChannel: form.runtime_channel, refresh: true }));
+      setEnvironment(nextEnvironment);
+      if (response.installed) {
+        try {
+          const settingsResponse = await api.updateSettings({
+            ...buildSettingsSavePayload(form),
+            transcription_provider: "funasr",
+          });
+          setForm(maskConfiguredApiKeys(settingsResponse.settings));
+          setIsDirty(false);
+          setSaveStatus(settingsResponse.message || "已切换为 FunASR");
+          onSettingsSaved(settingsResponse.settings, nextEnvironment);
+        } catch (error) {
+          setFunasrStatus(`FunASR 已安装，但切换默认转写方式失败：${error instanceof Error ? error.message : "保存设置失败"}`);
+        }
+      }
+      onRefresh();
+    } catch (error) {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      setFunasrStatus(error instanceof Error ? error.message : "安装 FunASR 语音识别环境失败");
+    } finally {
+      setFunasrInstalling(false);
     }
   }
 
@@ -1798,6 +1874,7 @@ export function SettingsPage({
           { id: "settings-save-status", message: saveStatus },
           { id: "settings-cuda-status", message: cudaStatus },
           { id: "settings-local-asr-status", message: localAsrStatus },
+          { id: "settings-funasr-status", message: funasrStatus },
           { id: "settings-knowledge-deps-status", message: knowledgeDepsStatus },
           { id: "settings-runtime-status", message: runtimeStatusMessage },
           { id: "settings-asr-test-status", message: asrTestStatus },
@@ -2468,6 +2545,7 @@ export function SettingsPage({
                   >
                     <option value="siliconflow">硅基流动 API</option>
                     <option value="multimodal">多模态 ASR（第三方）</option>
+                    <option value="funasr" disabled={!funasrInstalled}>FunASR（本地）{funasrInstalled ? "" : "（需先安装）"}</option>
                     <option value="local" disabled={!localAsrInstalled}>本地 ASR（需先安装）</option>
                   </select>
                   <span className="settings-input-caption">默认推荐云端模式（硅基流动的语音识别是免费的！只需要注册然后填上apikey就可以用了）。</span>
@@ -2562,6 +2640,79 @@ export function SettingsPage({
                       </button>
                       <span className="settings-input-caption">
                         使用当前表单中的多模态配置发起一次临时转写测试，不会保存设置。
+                      </span>
+                    </div>
+                  </>
+                ) : usesFunAsr ? (
+                  <>
+                    <label className="settings-input-group" ref={registerFocusTarget("funasr_model") as (node: HTMLLabelElement | null) => void}>
+                      <span className="settings-input-label">FunASR 模型</span>
+                      <select className="settings-select-field" value={form.funasr_model} onChange={(e) => updateForm({ ...form, funasr_model: e.target.value })}>
+                        <option value="paraformer-zh">paraformer-zh（中文通用，推荐）</option>
+                        <option value="iic/SenseVoiceSmall">SenseVoice-Small（多语言）</option>
+                        <option value="iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch">SEACO Paraformer（高级，带时间戳）</option>
+                        <option value="FunAudioLLM/Fun-ASR-Nano-2512">Fun-ASR-Nano（轻量级）</option>
+                      </select>
+                      <span className="settings-input-caption">选择 FunASR 语音识别模型</span>
+                    </label>
+                    <label className="settings-input-group" ref={registerFocusTarget("funasr_device") as (node: HTMLLabelElement | null) => void}>
+                      <span className="settings-input-label">运行设备</span>
+                      <select className="settings-select-field" value={form.funasr_device} onChange={(e) => updateForm({ ...form, funasr_device: e.target.value })}>
+                        <option value="cpu">CPU</option>
+                        <option value="cuda">GPU (CUDA)</option>
+                      </select>
+                      <span className="settings-input-caption">选择推理设备，GPU 需要 CUDA 支持</span>
+                    </label>
+                    <label className="settings-input-group" ref={registerFocusTarget("funasr_vad_model") as (node: HTMLLabelElement | null) => void}>
+                      <span className="settings-input-label">语音活动检测 (VAD)</span>
+                      <select className="settings-select-field" value={form.funasr_vad_model} onChange={(e) => updateForm({ ...form, funasr_vad_model: e.target.value })}>
+                        <option value="">关闭</option>
+                        <option value="fsmn-vad">开启（fsmn-vad）</option>
+                      </select>
+                      <span className="settings-input-caption">启用语音活动检测以提高识别准确度</span>
+                    </label>
+                    <label className="settings-input-group" ref={registerFocusTarget("funasr_punc_model") as (node: HTMLLabelElement | null) => void}>
+                      <span className="settings-input-label">自动标点</span>
+                      <select className="settings-select-field" value={form.funasr_punc_model} onChange={(e) => updateForm({ ...form, funasr_punc_model: e.target.value })}>
+                        <option value="">关闭</option>
+                        <option value="ct-punc">开启（ct-punc）</option>
+                      </select>
+                      <span className="settings-input-caption">自动添加标点符号</span>
+                    </label>
+                    <label className="settings-input-group" ref={registerFocusTarget("funasr_spk_model") as (node: HTMLLabelElement | null) => void}>
+                      <span className="settings-input-label">说话人识别</span>
+                      <select className="settings-select-field" value={form.funasr_spk_model} onChange={(e) => updateForm({ ...form, funasr_spk_model: e.target.value })}>
+                        <option value="">关闭</option>
+                        <option value="cam++">开启（cam++）</option>
+                      </select>
+                      <span className="settings-input-caption">识别不同说话人</span>
+                    </label>
+                    <label className="settings-input-group" ref={registerFocusTarget("funasr_hub") as (node: HTMLLabelElement | null) => void}>
+                      <span className="settings-input-label">模型下载源</span>
+                      <select className="settings-select-field" value={form.funasr_hub} onChange={(e) => updateForm({ ...form, funasr_hub: e.target.value })}>
+                        <option value="ms">ModelScope</option>
+                        <option value="hf">HuggingFace</option>
+                      </select>
+                      <span className="settings-input-caption">选择模型下载源</span>
+                    </label>
+                    <label className="settings-input-group" ref={registerFocusTarget("funasr_hotword") as (node: HTMLLabelElement | null) => void}>
+                      <span className="settings-input-label">热词（可选）</span>
+                      <input className="settings-input-field" value={form.funasr_hotword} onChange={(e) => updateForm({ ...form, funasr_hotword: e.target.value })} placeholder="多个热词用空格分隔" />
+                      <span className="settings-input-caption">提高特定词汇的识别准确度，多个热词用空格分隔</span>
+                    </label>
+                    <div className="settings-input-group">
+                      <span className="settings-input-label">可用性状态</span>
+                      <div className="settings-status-display">
+                        {funasrInstalled ? (
+                          <span className="text-success">✅ FunASR 已安装{environment?.funasrVersion ? `（${environment.funasrVersion}）` : ""}</span>
+                        ) : (
+                          <span className="text-danger">❌ FunASR 未安装 — 请前往「运行环境」板块安装</span>
+                        )}
+                      </div>
+                      <span className="settings-input-caption">
+                        {funasrInstalled
+                          ? "FunASR 环境就绪，可直接使用。"
+                          : "FunASR 依赖需要单独安装。前往「运行环境」→「FunASR 运行环境」点击安装按钮，安装完成后会自动切换。"}
                       </span>
                     </div>
                   </>
@@ -3664,6 +3815,27 @@ export function SettingsPage({
                   </span>
                   {localAsrOutput ? (
                     <textarea className="textarea-field log-viewer" rows={8} readOnly value={localAsrOutput}></textarea>
+                  ) : null}
+                </div>
+              </div>
+              <div className="settings-form-group">
+                <div className="settings-input-group">
+                  <span className="settings-input-label">FunASR 运行环境</span>
+                  <div
+                    className={`settings-actions settings-focus-target ${activeFocusTarget === "funasr_runtime" ? "is-highlighted" : ""}`}
+                    ref={registerFocusTarget("funasr_runtime") as (node: HTMLDivElement | null) => void}
+                  >
+                    <button className="secondary-button" type="button" disabled={funasrInstalling} onClick={() => void installFunAsr()}>
+                      {funasrInstalling ? "安装中..." : funasrInstalled ? "重新安装 FunASR" : "安装 FunASR"}
+                    </button>
+                  </div>
+                  <span className="settings-input-caption">
+                    {funasrInstalled
+                      ? `当前已安装${environment?.funasrVersion ? `（${environment.funasrVersion}）` : ""}，中文识别效果优于 Whisper。安装后会自动切换到 FunASR 模式。`
+                      : "FunASR 是阿里开源语音识别引擎，中文效果优于 Whisper，CPU 速度约为 Whisper 的 34 倍。依赖包含 PyTorch，安装体积较大，请耐心等待。"}
+                  </span>
+                  {funasrOutput ? (
+                    <textarea className="textarea-field log-viewer" rows={8} readOnly value={funasrOutput} />
                   ) : null}
                 </div>
               </div>

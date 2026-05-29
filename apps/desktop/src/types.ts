@@ -293,6 +293,9 @@ export type EnvironmentInfo = {
   localAsrInstalled?: boolean;
   localAsrAvailable?: boolean;
   localAsrVersion?: string;
+  funasrInstalled?: boolean;
+  funasrAvailable?: boolean;
+  funasrVersion?: string;
   chromadbInstalled?: boolean;
   chromadbVersion?: string;
   chromadbError?: string;
@@ -371,6 +374,14 @@ export type ServiceSettings = {
   multimodal_asr_api_key_configured?: boolean;
   multimodal_asr_chunk_duration_seconds: number;
   multimodal_asr_max_retries: number;
+  funasr_model: string;
+  funasr_device: string;
+  funasr_vad_model: string;
+  funasr_punc_model: string;
+  funasr_spk_model: string;
+  funasr_hub: string;
+  funasr_hotword: string;
+  funasr_available: boolean;
   cuda_variant: string;
   runtime_channel: string;
   output_dir: string;

@@ -48,8 +48,10 @@ from video_sum_service.runtime_support import (
     ensure_runtime_channel,
     inspect_runtime_channels,
     install_cuda_support,
+    install_funasr,
     install_knowledge_dependencies,
     install_local_asr,
+    read_install_log,
     normalize_runtime_channel,
     replace_task_worker,
     serialize_settings,
@@ -494,8 +496,10 @@ def post_cuda_install(payload: dict[str, object], request: Request) -> dict[str,
 
 @router.post("/asr/local/install")
 def post_local_asr_install(request: Request, payload: dict[str, object] | None = None) -> dict[str, object]:
-    reinstall = bool((payload or {}).get("reinstall"))
-    result, worker = install_local_asr(reinstall=reinstall, repository=request.app.state.task_repository)
+    payload = payload or {}
+    reinstall = bool(payload.get("reinstall"))
+    session_id = str(payload.get("installSessionId") or "") or None
+    result, worker = install_local_asr(reinstall=reinstall, repository=request.app.state.task_repository, session_id=session_id)
     replace_task_worker(request.app.state, worker)
     if isinstance(result.get("environment"), dict):
         mark_runtime_worker_ready(
@@ -504,6 +508,29 @@ def post_local_asr_install(request: Request, payload: dict[str, object] | None =
             "Runtime worker refreshed after ASR install.",
         )
     return result
+
+
+@router.post("/asr/funasr/install")
+def post_funasr_install(request: Request, payload: dict[str, object] | None = None) -> dict[str, object]:
+    payload = payload or {}
+    reinstall = bool(payload.get("reinstall"))
+    session_id = str(payload.get("installSessionId") or "") or None
+    result, worker = install_funasr(reinstall=reinstall, repository=request.app.state.task_repository, session_id=session_id)
+    replace_task_worker(request.app.state, worker)
+    if isinstance(result.get("environment"), dict):
+        mark_runtime_worker_ready(
+            request.app.state,
+            result["environment"],
+            "Runtime worker refreshed after FunASR install.",
+        )
+    return result
+
+
+@router.get("/asr/install-log")
+def get_install_log(session_id: str) -> dict[str, object]:
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", session_id):
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+    return read_install_log(session_id)
 
 
 @router.post("/knowledge/install")

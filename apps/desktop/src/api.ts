@@ -459,10 +459,11 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
-  installLocalAsr(payload?: { reinstall?: boolean }) {
+  installLocalAsr(payload?: { reinstall?: boolean; installSessionId?: string }) {
     return fetchJson<{
       installed: boolean;
       runtimeChannel?: string;
+      installSessionId?: string;
       stdoutTail?: string;
       environment?: EnvironmentInfo;
     }>("/api/v1/asr/local/install", {
@@ -470,6 +471,28 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload ?? {}),
     });
+  },
+  installFunAsr(payload?: { reinstall?: boolean; installSessionId?: string }) {
+    return fetchJson<{
+      installed: boolean;
+      runtimeChannel?: string;
+      installSessionId?: string;
+      stdoutTail?: string;
+      environment?: EnvironmentInfo;
+    }>("/api/v1/asr/funasr/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload ?? {}),
+    });
+  },
+  getInstallLog(sessionId: string) {
+    return fetchJson<{
+      sessionId: string;
+      label: string;
+      done: boolean;
+      success: boolean;
+      log: string;
+    }>(`/api/v1/asr/install-log?session_id=${encodeURIComponent(sessionId)}`);
   },
   installKnowledgeDependencies(payload?: { reinstall?: boolean; runtime_channel?: string; runtimeChannel?: string }) {
     return fetchJson<{
