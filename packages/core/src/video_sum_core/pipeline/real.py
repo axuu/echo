@@ -252,6 +252,10 @@ class PipelineSettings:
 class RealPipelineRunner(PipelineRunner):
     def __init__(self, settings: PipelineSettings) -> None:
         self._settings = settings
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def preflight(
         self,
@@ -1390,6 +1394,19 @@ class RealPipelineRunner(PipelineRunner):
                     "message": f"兼容模式重试，正在加载 FunASR 模型 {self._settings.funasr_model}（禁用 VAD/PUNC）",
                 }
             )
+        elif self._settings.funasr_device == "cuda":
+            attempts.append(
+                {
+                    "model": self._settings.funasr_model,
+                    "device": "cpu",
+                    "vad_model": "",
+                    "punc_model": "",
+                    "spk_model": "",
+                    "hub": self._settings.funasr_hub,
+                    "hotword": self._settings.funasr_hotword,
+                    "message": f"GPU 模式异常，自动回退 CPU 重试...",
+                }
+            )
 
         last_error: VideoSumError | None = None
         for index, attempt in enumerate(attempts):
@@ -1442,6 +1459,13 @@ class RealPipelineRunner(PipelineRunner):
                 if is_last_attempt or not self._should_retry_transcription(exc):
                     raise
                 emit("transcribing", 56, "转写引擎异常，正在切换兼容模式重试")
+            except RuntimeError as exc:
+                msg = str(exc).lower()
+                if "lock" in msg or "waiting" in msg:
+                    raise VideoSumError(
+                        f"可能由于多个任务同时下载模型导致锁竞争，请稍后重试: {exc}"
+                    ) from exc
+                raise
 
         raise last_error or VideoSumError("FunASR transcription failed.")
 
@@ -1861,13 +1885,31 @@ class RealPipelineRunner(PipelineRunner):
         progress_offset = 0
         timeout_seconds = max(30 * 60, int((duration or 0) * 8) + 10 * 60)
         deadline = time.monotonic() + timeout_seconds
+        stall_start = time.monotonic()
+        stall_timeout = 600  # 10 minutes with no progress -> abort
         while process.poll() is None:
+            if self._cancelled:
+                process.kill()
+                process.wait(timeout=5)
+                raise VideoSumError("Task cancelled by user.")
             prev_offset = progress_offset
             progress_offset = self._replay_transcription_progress(progress_path, progress_offset, emit)
             if progress_offset == prev_offset:
                 _emit_stderr_progress()
             else:
                 _funasr_last_reported_stderr = len(_funasr_stderr_lines)
+            # Stall detection: if the subprocess produces zero progress
+            # for too long it is probably stuck (waiting for a lock, failed
+            # download, etc.) — abort early instead of waiting the full 30 min.
+            if progress_offset == 0:
+                if time.monotonic() - stall_start > stall_timeout:
+                    process.kill()
+                    raise VideoSumError(
+                        "FunASR subprocess produced no progress after 10 minutes. "
+                        "Check network or ModelScope availability."
+                    )
+            else:
+                stall_start = time.monotonic()
             if time.monotonic() > deadline:
                 process.kill()
                 _drain_stdout_thread.join(timeout=2)

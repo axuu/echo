@@ -1095,6 +1095,13 @@ export function SettingsPage({
   const runningTaskCount = taskList.filter((task) => task.status === "running").length;
   const localAsrInstalled = Boolean(environment?.localAsrInstalled);
   const funasrInstalled = Boolean(environment?.funasrInstalled);
+
+  useEffect(() => {
+    if (!funasrInstalled && form?.transcription_provider === "funasr") {
+      setForm({ ...form, transcription_provider: "siliconflow" });
+    }
+  }, [funasrInstalled]);
+
   const knowledgeDepsReady = Boolean(environment?.knowledgeDependenciesReady);
   const missingKnowledgeDeps = [
     environment?.chromadbInstalled ? null : "chromadb",
@@ -1467,7 +1474,9 @@ export function SettingsPage({
           const log = await api.getInstallLog(sessionId);
           if (log.log) setFunasrOutput(log.log);
           if (log.done && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        } catch { /* ignore poll errors */ }
+        } catch (e) {
+          setFunasrOutput(prev => prev + `\n[轮询异常: ${e instanceof Error ? e.message : 'network error'}]`);
+        }
       }, 1500);
       const response = await api.installFunAsr({ installSessionId: sessionId });
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }

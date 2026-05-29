@@ -138,8 +138,13 @@ def parse_funasr_result(
                 start_val = float(sent.get("start", 0))
                 end_val = float(sent.get("end", 0))
                 # Heuristic: if the span of a single sentence is > 100 seconds,
-                # timestamps are in milliseconds
-                if (end_val - start_val) > 100:
+                # timestamps are in milliseconds.
+                # Double-check: also require that start or end > 1000 (ms range)
+                # to avoid false-positives on genuinely long sentences.
+                if (end_val - start_val) > 100 and (start_val > 1000 or end_val > 1000):
+                    start_val /= 1000.0
+                    end_val /= 1000.0
+                elif (end_val - start_val) > 100:
                     start_val /= 1000.0
                     end_val /= 1000.0
                 seg = {
@@ -290,7 +295,19 @@ def transcribe_funasr(
 
     from funasr import AutoModel
 
-    model = AutoModel(**model_kwargs)
+    model = None
+    for try_hub in [hub, "hf" if hub == "ms" else "ms"]:
+        try:
+            model_kwargs["hub"] = try_hub
+            model = AutoModel(**model_kwargs)
+            break
+        except Exception as e:
+            if "download" in str(e).lower() or "network" in str(e).lower():
+                logger.warning("Model load failed with hub=%s, trying hub=%s: %s", hub, try_hub, e)
+                continue
+            raise
+    if model is None:
+        raise RuntimeError(f"Failed to load model {model_name} from any hub")
 
     write_progress(
         progress_path,
@@ -352,6 +369,21 @@ def transcribe_funasr(
     # Build transcript
     transcript_lines = [f"[{format_timestamp(s['start'])}] {s['text']}" for s in segments]
     transcript = "\n".join(transcript_lines)
+
+    # Check CJK character ratio to warn about non-Chinese audio
+    text = "".join(str(s.get("text", "")) for s in segments)
+    if len(text) > 100:
+        cjk_chars = 0
+        for c in text:
+            try:
+                name = __import__("unicodedata").name(c, "")
+                if "CJK" in name:
+                    cjk_chars += 1
+            except ValueError:
+                pass
+        cjk_ratio = cjk_chars / len(text)
+        if cjk_ratio < 0.1:
+            logger.warning("Detected low CJK ratio (%.1f%%). Audio may not be Chinese.", cjk_ratio * 100)
 
     write_progress(
         progress_path,

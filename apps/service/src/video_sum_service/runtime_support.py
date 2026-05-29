@@ -1725,13 +1725,25 @@ def install_funasr(reinstall: bool, repository: SqliteTaskRepository, *, session
     if runtime_dir is None or python_executable is None:
         raise HTTPException(status_code=500, detail="Managed runtime is unavailable.")
 
+    # W10: disk space pre-check
+    cache_dir = Path.home() / ".cache" / "modelscope"
+    if cache_dir.parent.exists():
+        free = shutil.disk_usage(cache_dir.parent).free
+        if free < 2 * 1024 * 1024 * 1024:  # < 2GB
+            raise HTTPException(
+                status_code=507,
+                detail="磁盘空间不足（需要至少 2GB）。当前可用: {:.1f}GB".format(free / (1024**3)),
+            )
+
     use_streaming = session_id is not None
     if use_streaming:
         start_install_session(session_id, "FunASR")
     runner = _StreamingRunner(session_id) if use_streaming else run_command
 
     try:
-        install_workspace_packages(python_executable, runtime_channel=runtime_channel)
+        # W3: GPU runtime skip workspace reinstall to avoid CUDA version conflicts
+        if "gpu" not in runtime_channel:
+            install_workspace_packages(python_executable, runtime_channel=runtime_channel)
         ensure_runtime_pip(python_executable, runtime_channel)
         result = pip_install_with_fallbacks(
             python_executable,
