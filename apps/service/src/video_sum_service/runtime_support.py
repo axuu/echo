@@ -58,6 +58,9 @@ if TYPE_CHECKING:
 _environment_probe_cache: dict[str, dict[str, object]] = {}
 _environment_probe_failures: dict[str, str] = {}
 _ENVIRONMENT_PROBE_CACHE_FILE = "environment-probe-cache.json"
+_INSPECT_CHANNELS_CACHE: dict[str, object] | None = None
+_INSPECT_CHANNELS_CACHED_AT: float = 0.0
+_INSPECT_CHANNELS_CACHE_TTL: float = 5.0  # seconds
 _PIP_INDEX_CANDIDATES: tuple[tuple[str, str | None], ...] = (
     ("official", None),
     ("tsinghua", "https://pypi.tuna.tsinghua.edu.cn/simple"),
@@ -904,6 +907,12 @@ def replace_runtime_with_base_copy(
 
 
 def inspect_runtime_channels() -> dict[str, object]:
+    global _INSPECT_CHANNELS_CACHE, _INSPECT_CHANNELS_CACHED_AT
+    # Return cached result if fresh — avoids repeated disk I/O on every UI poll
+    now = time.time()
+    if _INSPECT_CHANNELS_CACHE is not None and (now - _INSPECT_CHANNELS_CACHED_AT) < _INSPECT_CHANNELS_CACHE_TTL:
+        return dict(_INSPECT_CHANNELS_CACHE)
+
     root = managed_runtime_root()
     discovered = set(_KNOWN_RUNTIME_CHANNELS)
     if root.exists():
@@ -976,13 +985,22 @@ def inspect_runtime_channels() -> dict[str, object]:
             }
         )
 
-    return {
+    result = {
         "baseAppVersion": base_app_version,
         "baseRuntimeLayout": base_layout,
         "basePythonVersion": base_python_version,
         "pipIndexes": pip_index_options(),
         "channels": channels,
     }
+    _INSPECT_CHANNELS_CACHE = result
+    _INSPECT_CHANNELS_CACHED_AT = now
+    return result
+
+
+def _invalidate_inspect_channels_cache() -> None:
+    global _INSPECT_CHANNELS_CACHE, _INSPECT_CHANNELS_CACHED_AT
+    _INSPECT_CHANNELS_CACHE = None
+    _INSPECT_CHANNELS_CACHED_AT = 0.0
 
 
 def sync_runtime_channel(runtime_channel: str) -> dict[str, object]:
@@ -1400,6 +1418,7 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
 
 
 def clear_environment_probe_cache(runtime_channel: str | None = None) -> None:
+    _invalidate_inspect_channels_cache()
     if runtime_channel is None:
         _environment_probe_cache.clear()
         _environment_probe_failures.clear()
@@ -1688,7 +1707,19 @@ def install_cuda_support(cuda_variant: str, repository: SqliteTaskRepository, *,
     current_settings = settings_manager.save(SettingsUpdatePayload(cuda_variant=cuda_variant, runtime_channel=runtime_channel))
     clear_environment_probe_cache(runtime_channel)
     clear_environment_probe_cache("base")
-    write_runtime_metadata(runtime_channel, {"runtimeChannel": runtime_channel, "cudaVariant": cuda_variant, "python": str(python_executable)})
+    # Inherit version metadata from base so the GPU runtime reports the correct appVersion
+    base_metadata = read_runtime_metadata(managed_runtime_dir("base"))
+    write_runtime_metadata(
+        runtime_channel,
+        {
+            "runtimeChannel": runtime_channel,
+            "cudaVariant": cuda_variant,
+            "python": str(python_executable),
+            "appVersion": base_metadata.get("appVersion") or "",
+            "runtimeLayout": base_metadata.get("runtimeLayout") or "",
+            "pythonVersion": base_metadata.get("pythonVersion") or "",
+        },
+    )
     environment = detect_environment(runtime_channel)
     worker = build_worker(repository, current_settings, environment_info=environment)
     return {

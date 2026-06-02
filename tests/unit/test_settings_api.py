@@ -1563,6 +1563,8 @@ def test_ensure_runtime_channel_syncs_base_preserves_extension_top_level_package
 
 
 def test_inspect_runtime_channels_reports_outdated_runtime(monkeypatch, tmp_path: Path) -> None:
+    runtime_support._invalidate_inspect_channels_cache()
+    runtime_support._invalidate_inspect_channels_cache()
     runtime_root = tmp_path / "runtime"
     base_dir = runtime_root / "base"
     gpu_dir = runtime_root / "gpu-cu128"
@@ -1604,6 +1606,7 @@ def test_inspect_runtime_channels_reports_outdated_runtime(monkeypatch, tmp_path
 
 
 def test_inspect_runtime_channels_ignores_backup_and_temp_dirs(monkeypatch, tmp_path: Path) -> None:
+    runtime_support._invalidate_inspect_channels_cache()
     runtime_root = tmp_path / "runtime"
     base_dir = runtime_root / "base"
     gpu_dir = runtime_root / "gpu-cu128"
@@ -1651,6 +1654,7 @@ def test_inspect_runtime_channels_prefers_cached_environment_probe(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    runtime_support._invalidate_inspect_channels_cache()
     runtime_root = tmp_path / "runtime"
     cache_dir = tmp_path / "cache"
     base_dir = runtime_root / "base"
@@ -1721,6 +1725,7 @@ def test_inspect_runtime_channels_ignores_stale_cached_environment_probe(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    runtime_support._invalidate_inspect_channels_cache()
     runtime_root = tmp_path / "runtime"
     cache_dir = tmp_path / "cache"
     base_dir = runtime_root / "base"
@@ -1791,6 +1796,7 @@ def test_inspect_runtime_channels_ignores_cache_when_runtime_metadata_changes(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    runtime_support._invalidate_inspect_channels_cache()
     runtime_root = tmp_path / "runtime"
     cache_dir = tmp_path / "cache"
     base_dir = runtime_root / "base"
