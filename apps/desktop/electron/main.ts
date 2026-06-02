@@ -1999,16 +1999,19 @@ function setAutoLaunch(enabled: boolean): boolean {
   try {
     app.setLoginItemSettings({ openAtLogin: enabled });
   } catch (err) {
-    console.error("setLoginItemSettings threw", err);
+    console.error("setLoginItemSettings failed:", err);
   }
-  // Electron writes to HKCU\Software\Microsoft\Windows\CurrentVersion\Run
-  // on Windows.  The write can fail silently — always verify by reading back.
   const actual = app.getLoginItemSettings().openAtLogin;
-  console.log("setAutoLaunch: requested=%s actual=%s execPath=%s", enabled, actual, process.execPath);
+  preferences = { ...preferences, autoLaunch: actual };
   preferences = { ...preferences, autoLaunch: actual };
   savePreferences();
   rebuildTrayMenu();
   return actual;
+}
+
+function _trayIcon(svgMarkup: string): Electron.NativeImage {
+  const dataUrl = `data:image/svg+xml,${encodeURIComponent(svgMarkup)}`;
+  return nativeImage.createFromDataURL(dataUrl).resize({ width: 16, height: 16 });
 }
 
 function rebuildTrayMenu() {
@@ -2018,10 +2021,18 @@ function rebuildTrayMenu() {
   const prefs = getPreferences();
   const template: MenuItemConstructorOptions[] = [];
 
+  // Simple 16x16 SVG icons for tray menu
+  const ICON_SHOW = _trayIcon('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="11" rx="1" fill="none" stroke="#555" stroke-width="1.5"/><path d="M5 16V13M11 16V13" stroke="#555" stroke-width="1.5"/><line x1="2" y1="13" x2="14" y2="13" stroke="#555" stroke-width="1.5"/></svg>');
+  const ICON_STOP  = _trayIcon('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2" fill="#e14b5a"/></svg>');
+  const ICON_START = _trayIcon('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="none" stroke="#22a866" stroke-width="1.5"/><polygon points="6,5 6,11 12,8" fill="#22a866"/></svg>');
+  const ICON_LOGS  = _trayIcon('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1" fill="none" stroke="#555" stroke-width="1.3"/><line x1="5" y1="5" x2="11" y2="5" stroke="#555" stroke-width="1.2"/><line x1="5" y1="8" x2="11" y2="8" stroke="#555" stroke-width="1.2"/><line x1="5" y1="11" x2="9" y2="11" stroke="#555" stroke-width="1.2"/></svg>');
+  const ICON_EXIT  = _trayIcon('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><line x1="4" y1="4" x2="12" y2="12" stroke="#555" stroke-width="1.8" stroke-linecap="round"/><line x1="12" y1="4" x2="4" y2="12" stroke="#555" stroke-width="1.8" stroke-linecap="round"/></svg>');
+
   // Only show window toggle when the window is hidden/minimized
   if (!mainWindow?.isVisible()) {
     template.push({
-      label: `▶\t显示主窗口`,
+      label: "显示主窗口",
+      icon: ICON_SHOW,
       click: () => {
         mainWindow?.show();
         mainWindow?.focus();
@@ -2031,14 +2042,15 @@ function rebuildTrayMenu() {
 
   template.push(
     {
-      label: backendStatus.running ? `●\t停止后端` : `○\t启动后端`,
+      label: backendStatus.running ? "停止后端" : "启动后端",
+      icon: backendStatus.running ? ICON_STOP : ICON_START,
       click: () => {
         void (backendStatus.running ? stopBackend() : startBackend());
       },
     },
     { type: "separator" },
     {
-      label: `⚙\t开机自启动`,
+      label: "开机自启动",
       type: "checkbox",
       checked: prefs.autoLaunch,
       click: (menuItem) => {
@@ -2046,7 +2058,7 @@ function rebuildTrayMenu() {
       },
     },
     {
-      label: `🔇\t开机静默启动`,
+      label: "开机静默启动",
       type: "checkbox",
       checked: prefs.silentStart,
       click: (menuItem) => {
@@ -2056,10 +2068,10 @@ function rebuildTrayMenu() {
       },
     },
     {
-      label: `☰\t关闭窗口时...`,
+      label: "关闭窗口时",
       submenu: [
         {
-          label: prefs.closeBehavior === "tray" ? `●\t最小化到托盘` : `○\t最小化到托盘`,
+          label: prefs.closeBehavior === "tray" ? "\u25CF 最小化到托盘" : "\u25CB 最小化到托盘",
           click: () => {
             preferences = { ...preferences, closeBehavior: "tray", rememberCloseBehavior: true };
             savePreferences();
@@ -2067,7 +2079,7 @@ function rebuildTrayMenu() {
           },
         },
         {
-          label: prefs.closeBehavior === "exit" ? `●\t直接退出应用` : `○\t直接退出应用`,
+          label: prefs.closeBehavior === "exit" ? "\u25CF 直接退出应用" : "\u25CB 直接退出应用",
           click: () => {
             preferences = { ...preferences, closeBehavior: "exit", rememberCloseBehavior: true };
             savePreferences();
@@ -2078,13 +2090,15 @@ function rebuildTrayMenu() {
     },
     { type: "separator" },
     {
-      label: `📋\t打开日志目录`,
+      label: "打开日志目录",
+      icon: ICON_LOGS,
       click: () => {
         void shell.openPath(path.dirname(getServiceLogPath()));
       },
     },
     {
-      label: `✕\t退出应用`,
+      label: "退出应用",
+      icon: ICON_EXIT,
       click: () => {
         forceQuit = true;
         void stopBackend().finally(() => app.quit());
