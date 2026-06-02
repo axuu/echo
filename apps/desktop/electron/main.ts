@@ -32,6 +32,8 @@ type DesktopPreferences = {
   closeBehavior: CloseBehavior;
   rememberCloseBehavior: boolean;
   autoLaunch: boolean;
+  silentStart: boolean;
+  crashAutoRestart: boolean;
   themePreference?: ThemePreference;
   lastOpenedVersion?: string;
   lastSeenAnnouncementVersion?: string;
@@ -830,6 +832,8 @@ function loadPreferences(): DesktopPreferences {
       closeBehavior: "ask",
       rememberCloseBehavior: false,
       autoLaunch: false,
+      silentStart: false,
+      crashAutoRestart: false,
       ...JSON.parse(raw),
     };
   } catch {
@@ -837,6 +841,8 @@ function loadPreferences(): DesktopPreferences {
       closeBehavior: "ask",
       rememberCloseBehavior: false,
       autoLaunch: false,
+      silentStart: false,
+      crashAutoRestart: false,
     };
   }
 }
@@ -927,7 +933,8 @@ function recordOpenedVersionIfNoAnnouncement() {
 }
 
 function getStartupHidden(): boolean {
-  return process.argv.includes("--hidden");
+  const prefs = getPreferences();
+  return prefs.silentStart && process.argv.includes("--hidden");
 }
 
 function escapeHtml(value: string): string {
@@ -1149,20 +1156,11 @@ function getSplashMarkup(message = "正在启动 BiliSum 服务...") {
           .progress-bar {
             position: absolute;
             inset: 0 auto 0 0;
-            width: 44%;
+            width: 0%;
             border-radius: inherit;
             background: linear-gradient(90deg, var(--brand-500), var(--brand-600), var(--info));
             box-shadow: 0 0 18px rgba(251, 114, 153, 0.26);
-            animation: progressPulse 2.4s ease-in-out infinite;
-          }
-          .progress-sheen {
-            position: absolute;
-            inset: 0;
-            width: 26%;
-            border-radius: inherit;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
-            transform: translateX(-100%);
-            animation: sheen 1.8s ease-in-out infinite;
+            transition: width 0.6s ease;
           }
           .status-row {
             margin-top: 20px;
@@ -1195,16 +1193,6 @@ function getSplashMarkup(message = "正在启动 BiliSum 服务...") {
           @keyframes ambientSweep {
             0%, 100% { transform: translateX(-1.5%); opacity: 0.58; }
             50% { transform: translateX(1.5%); opacity: 0.78; }
-          }
-          @keyframes progressPulse {
-            0%, 100% { width: 36%; opacity: 0.82; }
-            50% { width: 54%; opacity: 1; }
-          }
-          @keyframes sheen {
-            0% { transform: translateX(-110%); opacity: 0; }
-            22% { opacity: 0.75; }
-            70% { opacity: 0.1; }
-            100% { transform: translateX(420%); opacity: 0; }
           }
         </style>
       </head>
@@ -1243,8 +1231,7 @@ function getSplashMarkup(message = "正在启动 BiliSum 服务...") {
           </div>
           <div class="progress-zone">
             <div class="progress-track">
-              <div class="progress-bar"></div>
-              <div class="progress-sheen"></div>
+              <div class="progress-bar" id="progress-bar"></div>
             </div>
             <div class="status-row">
               <span id="status-message">${escapedMessage}</span>
@@ -1277,6 +1264,7 @@ function loadSplash(message = "正在启动 BiliSum 服务...") {
     const script = `
       (function() {
         var messageElement = document.getElementById('status-message');
+        var barElement = document.getElementById('progress-bar');
         window.updateStatusMessage = function(msg) {
           if (messageElement) {
             messageElement.classList.add('fade-out');
@@ -1284,6 +1272,11 @@ function loadSplash(message = "正在启动 BiliSum 服务...") {
               messageElement.textContent = msg;
               messageElement.classList.remove('fade-out');
             }, 200);
+          }
+        };
+        window.updateSplashProgress = function(pct) {
+          if (barElement) {
+            barElement.style.width = Math.max(0, Math.min(100, pct)) + '%';
           }
         };
       })();
@@ -1299,6 +1292,13 @@ function updateSplashMessage(message: string) {
   void mainWindow.webContents.executeJavaScript(`window.updateStatusMessage(${JSON.stringify(message)})`);
 }
 
+function updateSplashProgress(pct: number) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    return;
+  }
+  void mainWindow.webContents.executeJavaScript(`window.updateSplashProgress(${pct})`);
+}
+
 function sendBackendStatus() {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
     return;
@@ -1311,10 +1311,8 @@ function updateBackendStatus(patch: Partial<BackendStatus>) {
   backendStatus = { ...backendStatus, ...patch };
   rebuildTrayMenu();
   sendBackendStatus();
-  
-  // 更新启动画面消息
+
   if (!previousReady && backendStatus.ready) {
-    updateSplashMessage("后端已就绪，正在加载应用...");
     setTimeout(() => loadApplication(), 300);
   } else if (!backendStatus.running && backendStatus.lastError) {
     updateSplashMessage(backendStatus.lastError);
@@ -1325,16 +1323,21 @@ function updateBackendStatus(patch: Partial<BackendStatus>) {
 
 async function waitForBackendReady(timeoutMs = 60_000): Promise<boolean> {
   const start = Date.now();
+  let attempt = 0;
   while (Date.now() - start < timeoutMs) {
     try {
       const response = await fetch(`${backendUrl}/health`, { headers: withBackendAuthHeaders() });
       if (response.ok) {
         updateBackendStatus({ ready: true, lastError: "" });
+        updateSplashProgress(80);
+        updateSplashMessage("服务已就绪，正在加载应用...");
         return true;
       }
     } catch {
       // Keep polling until timeout.
     }
+    attempt++;
+    updateSplashProgress(Math.min(80, 40 + attempt * 2));
     await new Promise((resolve) => setTimeout(resolve, 800));
   }
   updateBackendStatus({ ready: false, lastError: "Backend health check timed out." });
@@ -1795,6 +1798,9 @@ async function startBackend(): Promise<BackendStatus> {
   });
   getDesktopAccessToken();
 
+  updateSplashProgress(20);
+  updateSplashMessage("正在启动后端服务...");
+
   // Windows 上隐藏控制台窗口
   const spawnOptions: SpawnOptions = {
     cwd: target.cwd,
@@ -1880,6 +1886,9 @@ async function startBackend(): Promise<BackendStatus> {
     lastError: "",
   });
 
+  updateSplashProgress(40);
+  updateSplashMessage("后端已启动，等待服务就绪...");
+
   const ready = await waitForBackendReady();
   if (!ready) {
     loadSplash("后端启动超时，请检查日志后重试。");
@@ -1925,6 +1934,7 @@ async function stopBackend(): Promise<BackendStatus> {
 }
 
 async function loadApplication() {
+  updateSplashProgress(100);
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
@@ -1986,58 +1996,103 @@ function getTrayImage() {
 }
 
 function setAutoLaunch(enabled: boolean): boolean {
-  app.setLoginItemSettings({
-    openAtLogin: enabled,
-    args: ["--hidden"],
-  });
-  preferences = { ...preferences, autoLaunch: enabled };
+  try {
+    app.setLoginItemSettings({ openAtLogin: enabled });
+  } catch (err) {
+    console.error("setLoginItemSettings threw", err);
+  }
+  // Electron writes to HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+  // on Windows.  The write can fail silently — always verify by reading back.
+  const actual = app.getLoginItemSettings().openAtLogin;
+  console.log("setAutoLaunch: requested=%s actual=%s execPath=%s", enabled, actual, process.execPath);
+  preferences = { ...preferences, autoLaunch: actual };
   savePreferences();
   rebuildTrayMenu();
-  return app.getLoginItemSettings().openAtLogin;
+  return actual;
 }
 
 function rebuildTrayMenu() {
   if (!tray) {
     return;
   }
-  const template: MenuItemConstructorOptions[] = [
-    {
-      label: "显示主窗口",
+  const prefs = getPreferences();
+  const template: MenuItemConstructorOptions[] = [];
+
+  // Only show window toggle when the window is hidden/minimized
+  if (!mainWindow?.isVisible()) {
+    template.push({
+      label: `▶\t显示主窗口`,
       click: () => {
         mainWindow?.show();
         mainWindow?.focus();
       },
-    },
+    });
+  }
+
+  template.push(
     {
-      label: backendStatus.running ? "停止后端" : "启动后端",
+      label: backendStatus.running ? `●\t停止后端` : `○\t启动后端`,
       click: () => {
         void (backendStatus.running ? stopBackend() : startBackend());
       },
     },
+    { type: "separator" },
     {
-      label: "打开日志目录",
+      label: `⚙\t开机自启动`,
+      type: "checkbox",
+      checked: prefs.autoLaunch,
+      click: (menuItem) => {
+        setAutoLaunch(Boolean(menuItem.checked));
+      },
+    },
+    {
+      label: `🔇\t开机静默启动`,
+      type: "checkbox",
+      checked: prefs.silentStart,
+      click: (menuItem) => {
+        preferences = { ...preferences, silentStart: Boolean(menuItem.checked) };
+        savePreferences();
+        rebuildTrayMenu();
+      },
+    },
+    {
+      label: `☰\t关闭窗口时...`,
+      submenu: [
+        {
+          label: prefs.closeBehavior === "tray" ? `●\t最小化到托盘` : `○\t最小化到托盘`,
+          click: () => {
+            preferences = { ...preferences, closeBehavior: "tray", rememberCloseBehavior: true };
+            savePreferences();
+            rebuildTrayMenu();
+          },
+        },
+        {
+          label: prefs.closeBehavior === "exit" ? `●\t直接退出应用` : `○\t直接退出应用`,
+          click: () => {
+            preferences = { ...preferences, closeBehavior: "exit", rememberCloseBehavior: true };
+            savePreferences();
+            rebuildTrayMenu();
+          },
+        },
+      ],
+    },
+    { type: "separator" },
+    {
+      label: `📋\t打开日志目录`,
       click: () => {
         void shell.openPath(path.dirname(getServiceLogPath()));
       },
     },
     {
-      label: "开机自启动",
-      type: "checkbox",
-      checked: app.getLoginItemSettings().openAtLogin,
-      click: (menuItem) => {
-        setAutoLaunch(Boolean(menuItem.checked));
-      },
-    },
-    { type: "separator" },
-    {
-      label: "退出应用",
+      label: `✕\t退出应用`,
       click: () => {
         forceQuit = true;
         void stopBackend().finally(() => app.quit());
       },
     },
-  ];
-  tray.setToolTip("BiliSum");
+  );
+
+  tray.setToolTip(`BiliSum ${app.getVersion()} · ${backendStatus.running ? "运行中" : "已停止"}`);
   tray.setContextMenu(Menu.buildFromTemplate(template));
 }
 
@@ -2545,7 +2600,35 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("desktop:logs:get-service-log-path", () => getServiceLogPath());
   ipcMain.handle("desktop:logs:read-service-log-tail", (_event, lines = 200) => readServiceLogTail(lines));
+  ipcMain.handle("desktop:logs:clear", () => {
+    const logPath = getServiceLogPath();
+    fs.writeFileSync(logPath, "", "utf-8");
+    return true;
+  });
+  ipcMain.handle("desktop:logs:export", async () => {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: "导出日志",
+      defaultPath: `bilisum-${new Date().toISOString().slice(0, 10)}.log`,
+      filters: [{ name: "日志文件", extensions: ["log", "txt"] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    fs.copyFileSync(getServiceLogPath(), result.filePath);
+    return result.filePath;
+  });
   ipcMain.handle("desktop:preferences:get-close-behavior", () => getPreferences().closeBehavior);
+  ipcMain.handle("desktop:preferences:set-silent-start", (_event, enabled: boolean) => {
+    preferences = { ...preferences, silentStart: Boolean(enabled) };
+    savePreferences();
+    rebuildTrayMenu();
+    return preferences.silentStart;
+  });
+  ipcMain.handle("desktop:preferences:get-silent-start", () => getPreferences().silentStart);
+  ipcMain.handle("desktop:preferences:get-crash-auto-restart", () => getPreferences().crashAutoRestart);
+  ipcMain.handle("desktop:preferences:set-crash-auto-restart", (_event, enabled: boolean) => {
+    preferences = { ...preferences, crashAutoRestart: Boolean(enabled) };
+    savePreferences();
+    return preferences.crashAutoRestart;
+  });
   ipcMain.handle("desktop:preferences:set-close-behavior", (_event, value: CloseBehavior) => {
     setCloseBehavior(value, true);
     return value;

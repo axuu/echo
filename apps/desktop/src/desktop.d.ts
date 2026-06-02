@@ -119,6 +119,16 @@ type DesktopBridge = {
     setCloseBehavior(value: CloseBehavior): Promise<CloseBehavior>;
     resetCloseBehavior(): Promise<CloseBehavior>;
     setTheme(value: ThemePreference): Promise<ThemePreference>;
+    getSilentStart(): Promise<boolean>;
+    setSilentStart(enabled: boolean): Promise<boolean>;
+    getCrashAutoRestart(): Promise<boolean>;
+    setCrashAutoRestart(enabled: boolean): Promise<boolean>;
+  };
+  logs: {
+    getServiceLogPath(): Promise<string>;
+    readServiceLogTail(lines?: number): Promise<{ path: string; lines: number; content: string }>;
+    clearLog(): Promise<boolean>;
+    exportLog(): Promise<string | null>;
   };
   update: {
     check(): Promise<UpdateInfo>;

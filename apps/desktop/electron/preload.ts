@@ -206,6 +206,8 @@ const desktop = {
     getServiceLogPath: () => ipcRenderer.invoke("desktop:logs:get-service-log-path") as Promise<string>,
     readServiceLogTail: (lines = 200) =>
       ipcRenderer.invoke("desktop:logs:read-service-log-tail", lines) as Promise<{ path: string; lines: number; content: string }>,
+    clearLog: () => ipcRenderer.invoke("desktop:logs:clear") as Promise<boolean>,
+    exportLog: () => ipcRenderer.invoke("desktop:logs:export") as Promise<string | null>,
   },
   preferences: {
     getCloseBehavior: () => ipcRenderer.invoke("desktop:preferences:get-close-behavior") as Promise<CloseBehavior>,
@@ -214,6 +216,12 @@ const desktop = {
     resetCloseBehavior: () => ipcRenderer.invoke("desktop:preferences:reset-close-behavior") as Promise<CloseBehavior>,
     setTheme: (value: ThemePreference) =>
       ipcRenderer.invoke("desktop:preferences:set-theme", value) as Promise<ThemePreference>,
+    getSilentStart: () => ipcRenderer.invoke("desktop:preferences:get-silent-start") as Promise<boolean>,
+    setSilentStart: (enabled: boolean) =>
+      ipcRenderer.invoke("desktop:preferences:set-silent-start", enabled) as Promise<boolean>,
+    getCrashAutoRestart: () => ipcRenderer.invoke("desktop:preferences:get-crash-auto-restart") as Promise<boolean>,
+    setCrashAutoRestart: (enabled: boolean) =>
+      ipcRenderer.invoke("desktop:preferences:set-crash-auto-restart", enabled) as Promise<boolean>,
   },
   update: {
     check: () => ipcRenderer.invoke("desktop:update:check") as Promise<UpdateInfo>,
