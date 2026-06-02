@@ -22,6 +22,21 @@
   backdrop-filter: blur(8px);
 }
 
+/* macOS traffic light safe area — prevents overlap with native window buttons */
+.title-bar-traffic-light-spacer {
+  display: none;
+}
+.app-shell.is-macos .title-bar-traffic-light-spacer {
+  display: block;
+  width: 78px;
+  flex-shrink: 0;
+}
+/* macOS: hide custom window controls, use native traffic lights */
+.app-shell.is-macos .title-bar-controls .title-bar-button.close,
+.app-shell.is-macos .title-bar-controls .title-bar-button:not(.title-bar-button.close) {
+  /* handled via TitleBar conditionally */
+}
+
 .title-bar-sidebar-brand {
   display: flex;
   align-items: center;

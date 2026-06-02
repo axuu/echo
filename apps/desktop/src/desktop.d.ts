@@ -79,6 +79,7 @@ type DesktopBridge = {
     markStartupAnnouncementSeen(version: string): Promise<void>;
   };
   window: {
+    platform: NodeJS.Platform;
     show(): Promise<void>;
     minimize(): Promise<void>;
     maximize(): Promise<void>;

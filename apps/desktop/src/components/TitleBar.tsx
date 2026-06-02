@@ -33,6 +33,7 @@ export function TitleBar({
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false);
   const statusPopoverRef = useRef<HTMLDivElement | null>(null);
   const isDesktopWindowControlsAvailable = Boolean(window.desktop?.window);
+  const isMacOS = window.desktop?.window?.platform === "darwin";
 
   useEffect(() => {
     async function checkMaximized() {
@@ -109,6 +110,7 @@ export function TitleBar({
 
   return (
     <div className="title-bar">
+      <div className="title-bar-traffic-light-spacer" />
       <div className="title-bar-sidebar-brand">
         <div className="title-bar-brand-mark">
           <img src="/static/assets/icons/icon.svg" alt="" />
@@ -220,7 +222,7 @@ export function TitleBar({
             </svg>
           )}
         </button>
-        {isDesktopWindowControlsAvailable ? (
+        {isDesktopWindowControlsAvailable && !isMacOS ? (
           <>
             <button
               className="title-bar-button"

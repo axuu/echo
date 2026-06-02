@@ -955,8 +955,10 @@ export function App() {
     );
   }
 
+  const isMacOS = typeof window !== "undefined" && (window as any).desktop?.window?.platform === "darwin";
+
   return (
-    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${mobileSidebarOpen ? "mobile-sidebar-open" : ""}`}>
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${mobileSidebarOpen ? "mobile-sidebar-open" : ""} ${isMacOS ? "is-macos" : ""}`}>
       <input
         ref={localVideoInputRef}
         type="file"

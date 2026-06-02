@@ -158,6 +158,7 @@ const desktop = {
       ipcRenderer.invoke("desktop:app:mark-startup-announcement-seen", version) as Promise<void>,
   },
   window: {
+    platform: (process.env.BILISUM_DEV_PLATFORM as NodeJS.Platform) || process.platform,
     show: () => ipcRenderer.invoke("desktop:window:show") as Promise<void>,
     minimize: () => ipcRenderer.invoke("desktop:window:minimize") as Promise<void>,
     maximize: () => ipcRenderer.invoke("desktop:window:maximize") as Promise<void>,

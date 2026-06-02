@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:macUI": "concurrently -k \"npm:dev:renderer\" \"wait-on tcp:3000 && npm run build:electron && cross-env BILISUM_RENDERER_URL=http://127.0.0.1:3000 BILISUM_DEV_PLATFORM=darwin electron ./dist-electron/main.js\"",
     "dev:renderer": "vite --config vite.config.ts",
     "dev:electron": "wait-on tcp:3000 && npm run build:electron && cross-env BILISUM_RENDERER_URL=http://127.0.0.1:3000 electron ./dist-electron/main.js",
     "test": "node --experimental-strip-types test/run.ts",
