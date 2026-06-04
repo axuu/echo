@@ -1384,6 +1384,7 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
             "funasrInstalled": False,
             "funasrAvailable": False,
             "funasrVersion": "",
+            "funasrError": failure_detail[-1200:],
             "chromadbInstalled": False,
             "chromadbVersion": "",
             "chromadbError": "",
@@ -1413,6 +1414,7 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
     payload["localAsrInstalled"] = bool(payload.get("localAsrInstalled"))
     payload["localAsrAvailable"] = bool(payload.get("localAsrAvailable"))
     payload["localAsrVersion"] = str(payload.get("localAsrVersion") or "")
+    payload["funasrError"] = str(payload.get("funasrError") or "")
     payload["chromadbInstalled"] = bool(payload.get("chromadbInstalled"))
     payload["chromadbVersion"] = str(payload.get("chromadbVersion") or "")
     payload["chromadbError"] = str(payload.get("chromadbError") or "")

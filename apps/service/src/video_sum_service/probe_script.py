@@ -81,6 +81,7 @@ def probe() -> dict:
     payload["funasrVersion"] = funasr_version
     payload["funasrInstalled"] = funasr_installed
     payload["funasrAvailable"] = funasr_installed
+    payload["funasrError"] = funasr_error
 
     chromadb_installed, chromadb_version, chromadb_error = importable_distribution(
         "chromadb", "chromadb"
