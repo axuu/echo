@@ -127,6 +127,9 @@ def probe() -> dict:
         ]
         payload["knowledgeDependenciesError"] = "\n".join(errors)
 
+    # Debug: confirm sitecustomize guard was loaded at interpreter startup
+    payload["sitecustomizeActive"] = sys.modules["os"].environ.get("BILISUM_SITECUSTOMIZE") == "1"
+
     return payload
 
 

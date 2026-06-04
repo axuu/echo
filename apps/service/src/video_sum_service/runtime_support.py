@@ -831,10 +831,12 @@ if _bs_orig is not None:
         except (FileNotFoundError, OSError):
             return None
     _bs_os.add_dll_directory = _bs_safe
+    _bs_os.environ["BILISUM_SITECUSTOMIZE"] = "1"
 '''
     if target.exists() and target.read_text(encoding="utf-8") == content:
         return
     target.write_text(content, encoding="utf-8")
+    logger.info("sitecustomize guard written runtime_channel=%s path=%s", runtime_channel, target)
     logger.info("installed sitecustomize guard runtime_channel=%s", runtime_channel)
 
 
@@ -1407,6 +1409,17 @@ def detect_environment(runtime_channel: str | None = None) -> dict[str, object]:
         payload = json.loads(result.stdout.strip() or "{}")
         payload["ffmpegLocation"] = str(ffmpeg_location() or "")
         _environment_probe_failures.pop(active_channel, None)
+        # Debug: log probe result when torch/funasr are unexpectedly missing
+        if not payload.get("torchInstalled") or not payload.get("funasrInstalled"):
+            logger.info(
+                "probe debug channel=%s torch=%s funasr=%s sitecustomize=%s torchErr=%s funasrErr=%s",
+                active_channel,
+                payload.get("torchInstalled"),
+                payload.get("funasrInstalled"),
+                payload.get("sitecustomizeActive"),
+                payload.get("torchError", "")[-200:],
+                payload.get("funasrError", "")[-200:],
+            )
     except Exception as exc:
         probe_failed = True
         failure_detail = (exc.stderr or exc.stdout or str(exc)).strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
