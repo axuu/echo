@@ -303,6 +303,14 @@ def transcribe_funasr(
     if spk_model:
         model_kwargs["spk_model"] = spk_model
 
+    # Ensure torchaudio/lib is in the DLL search path before importing
+    # funasr (→ torch → torchaudio).  Guards handle WinError 206.
+    for _sp in [p for p in sys.path if p]:
+        _tal = os.path.join(_sp, "torchaudio", "lib")
+        if os.path.isdir(_tal):
+            os.add_dll_directory(_tal)
+            break
+
     from funasr import AutoModel
 
     model = None
