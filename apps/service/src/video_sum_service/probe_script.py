@@ -63,6 +63,14 @@ def probe() -> dict:
     cuda_available = bool(torch is not None and torch.cuda.is_available())
     gpu_name = torch.cuda.get_device_name(0) if cuda_available else ""
 
+    # Register torchaudio/lib DLL directory so that libtorchaudio.pyd
+    # can resolve its transitive dependencies.  Guards handle WinError 206.
+    if torch is not None:
+        _sp = sys.modules["os"].path.dirname(torch.__file__)  # site-packages/torch
+        _tal = sys.modules["os"].path.join(sys.modules["os"].path.dirname(_sp), "torchaudio", "lib")
+        if sys.modules["os"].path.isdir(_tal):
+            sys.modules["os"].add_dll_directory(_tal)
+
     payload = {
         "pythonVersion": sys.version.split()[0],
         "torchInstalled": torch is not None,
