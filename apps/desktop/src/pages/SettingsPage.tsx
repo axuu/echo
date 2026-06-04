@@ -3142,6 +3142,33 @@ export function SettingsPage({
                           />
                           <span className="settings-input-caption">要用于知识库问答和自动打标的 LLM 模型名称。</span>
                         </label>
+                        <label
+                          className={`settings-input-group settings-focus-target ${activeFocusTarget === "knowledge_embedding_model" ? "is-highlighted" : ""}`}
+                          ref={registerFocusTarget("knowledge_embedding_model") as (node: HTMLLabelElement | null) => void}
+                        >
+                          <span className="settings-input-label">Embedding 模型</span>
+                          <input
+                            className="settings-input-field"
+                            value={form.knowledge_embedding_model}
+                            disabled={!form.knowledge_enabled}
+                            onChange={(e) => updateForm({ ...form, knowledge_embedding_model: e.target.value })}
+                            placeholder="BAAI/bge-small-zh-v1.5"
+                          />
+                          <span className="settings-input-caption">文本向量化模型，支持 HuggingFace 或 ModelScope 路径。</span>
+                        </label>
+                        <label
+                          className={`settings-input-group settings-focus-target ${activeFocusTarget === "hf_endpoint" ? "is-highlighted" : ""}`}
+                          ref={registerFocusTarget("hf_endpoint") as (node: HTMLLabelElement | null) => void}
+                        >
+                          <span className="settings-input-label">HuggingFace 镜像</span>
+                          <input
+                            className="settings-input-field"
+                            value={form.hf_endpoint}
+                            onChange={(e) => updateForm({ ...form, hf_endpoint: e.target.value })}
+                            placeholder="https://hf-mirror.com"
+                          />
+                          <span className="settings-input-caption">留空使用官方源，填入镜像地址则所有模型下载走该镜像。</span>
+                        </label>
                         <div className="settings-inline-actions">
                           <button className="secondary-button" type="button" disabled={llmTestBusy || !form.knowledge_enabled} onClick={() => void testKnowledgeLlmConnection()}>
                             {llmTestBusy ? "测试中..." : "测试知识库 LLM"}
