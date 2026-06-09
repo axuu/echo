@@ -26,12 +26,12 @@ jobs:
 
     - name: 安装依赖
       run: |
-        uv sync --frozen --all-packages
-        uv pip install --system pytest-cov
+        uv sync --frozen
+        uv pip install pytest-cov
 
     - name: 运行测试并生成覆盖率
       run: |
-        pytest tests/unit/ \
+        uv run pytest tests/unit/ \
           --cov=apps/service/src/video_sum_service \
           --cov=packages/core/src/video_sum_core \
           --cov=packages/infra/src/video_sum_infra \
