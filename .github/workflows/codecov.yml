@@ -15,10 +15,10 @@ jobs:
     - name: Checkout 代码
       uses: actions/checkout@v4
 
-    - name: 设置 Python 3.11
+    - name: 设置 Python 3.12
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.12'
         cache: 'pip'
 
     - name: 安装 uv
