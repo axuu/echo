@@ -1,0 +1,26 @@
+# Codecov 配置文件
+# https://docs.codecov.io/docs/codecov-yaml
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        if_ci_failed: error
+    patch:
+      default:
+        target: 80%
+        if_ci_failed: error
+
+comment:
+  layout: "reach,diff,flags,tree,footer"
+  behavior: default
+  require_changes: false
+
+ignore:
+  - "tests/**/*"
+  - "apps/web/**/*"
+  - "apps/desktop/dist-electron/**/*"
+  - "**/__pycache__/**/*"
+  - "**/node_modules/**/*"

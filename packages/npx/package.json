@@ -1,0 +1,40 @@
+{
+  "name": "echo",
+  "version": "1.19.0",
+  "description": "Start the local Echo service from npx.",
+  "bin": {
+    "echo": "bin/echo.js"
+  },
+  "files": [
+    "bin",
+    "runtime",
+    "README.md"
+  ],
+  "scripts": {
+    "prepack": "node scripts/prepare-runtime.js",
+    "postpack": "node scripts/cleanup-runtime.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lycohana/Echo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lycohana/Echo/issues"
+  },
+  "homepage": "https://github.com/lycohana/Echo#readme",
+  "keywords": [
+    "echo",
+    "bilibili",
+    "video-summary",
+    "ai-summary",
+    "rag",
+    "knowledge-base"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}

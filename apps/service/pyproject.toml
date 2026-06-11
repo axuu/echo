@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "video-sum-service"
+version = "1.19.0"
+description = "Local backend service for the video summarizer."
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "python-multipart>=0.0.9,<1.0",
+  "uvicorn[standard]>=0.34,<1.0",
+  "pydantic>=2.10,<3.0",
+  "video-sum-core",
+  "video-sum-infra",
+]
+
+[project.optional-dependencies]
+knowledge = [
+  "chromadb>=1.0.0",
+  "sentence-transformers>=3.0",
+]
+
+[project.scripts]
+video-sum-service = "video_sum_service.main:run"
+video-sum-transcribe-worker = "video_sum_service.transcribe_worker:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/video_sum_service"]
+artifacts = ["src/video_sum_service/assets/*.wav"]

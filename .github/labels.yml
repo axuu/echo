@@ -1,0 +1,127 @@
+# GitHub Labels 配置
+# 标签会自动创建/更新，删除不在此列表的标签
+
+# 类型标签
+- name: bug
+  color: d73a4a
+  description: 报告的 Bug 或错误
+
+- name: enhancement
+  color: a2eeef
+  description: 新功能请求或改进建议
+
+- name: documentation
+  color: 0075ca
+  description: 文档相关的改进
+
+- name: question
+  color: d876e3
+  description: 使用问题或疑问
+
+# 优先级标签
+- name: priority:critical
+  color: b60205
+  description: 严重问题，需要立即处理
+
+- name: priority:high
+  color: d93f0b
+  description: 高优先级
+
+- name: priority:medium
+  color: fbca04
+  description: 中等优先级
+
+- name: priority:low
+  color: 0e8a16
+  description: 低优先级
+
+# 状态标签
+- name: stale
+  color: fef2c0
+  description: 长时间不活跃的 Issue/PR
+
+- name: work-in-progress
+  color: fbca04
+  description: 正在进行中
+
+- name: blocked
+  color: b60205
+  description: 被其他问题阻塞
+
+- name: help-wanted
+  color: 008672
+  description: 需要帮助
+
+- name: good-first-issue
+  color: 7057ff
+  description: 适合新贡献者的问题
+
+# 领域标签
+- name: area:desktop
+  color: 5319e7
+  description: 桌面应用相关
+
+- name: area:web
+  color: 5319e7
+  description: Web 界面相关
+
+- name: area:api
+  color: 5319e7
+  description: API 接口相关
+
+- name: area:subtitle
+  color: 1d76db
+  description: 字幕相关功能
+
+- name: area:transcribe
+  color: 1d76db
+  description: 转写相关功能
+
+- name: area:summary
+  color: 1d76db
+  description: 摘要生成相关
+
+- name: area:knowledge
+  color: 1d76db
+  description: 知识库相关
+
+- name: area:runtime
+  color: 1d76db
+  description: 运行时环境相关
+
+# 特殊标签
+- name: security
+  color: ee0701
+  description: 安全漏洞或安全相关
+
+- name: dependencies
+  color: 0366d6
+  description: 依赖更新
+
+- name: python
+  color: 3572A5
+  description: Python 代码相关
+
+- name: javascript
+  color: f1e05a
+  description: JavaScript/TypeScript 代码相关
+
+- name: ci
+  color: 000000
+  description: CI/CD 相关
+
+- name: duplicate
+  color: cfd3d7
+  description: 重复的 Issue
+
+- name: invalid
+  color: e4e669
+  description: 无效的 Issue
+
+- name: wontfix
+  color: ffffff
+  description: 不会修复的问题
+
+- name: pinned
+  color: d4c5f9
+  description: 置顶的 Issue，不会被 stale bot 关闭

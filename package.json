@@ -1,0 +1,20 @@
+{
+  "name": "echo-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix apps/desktop run dev",
+    "dev:macUI": "npm --prefix apps/desktop run dev:macUI",
+    "dev:desktop": "npm --prefix apps/desktop run dev",
+    "build:web": "npm --prefix apps/desktop run build:renderer",
+    "build": "npm --prefix apps/desktop run build",
+    "build:desktop": "npm --prefix apps/desktop run build",
+    "docker:build": "npm run build:web && docker build -t echo:local .",
+    "npx:test": "node packages/npx/bin/echo.js --version && cd packages/npx && npm pack --dry-run",
+    "package:win": "npm --prefix apps/desktop run package:win",
+    "package:win-notfront": "npm --prefix apps/desktop run package:win-notfront",
+    "package:mac": "npm --prefix apps/desktop run package:mac",
+    "package:mac-notfront": "npm --prefix apps/desktop run package:mac-notfront",
+    "build:win": "npm --prefix apps/desktop run package:win",
+    "build:mac": "npm --prefix apps/desktop run package:mac"
+  }
+}

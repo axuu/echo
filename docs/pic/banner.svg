@@ -1,0 +1,95 @@
+<svg width="1200" height="400" viewBox="0 0 1200 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 背景渐变 -->
+    <linearGradient id="bgGradient" x1="0" y1="0" x2="1200" y2="400" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1a1a2e"/>
+      <stop offset="1" stop-color="#16213e"/>
+    </linearGradient>
+
+    <!-- 图标背景渐变 -->
+    <linearGradient id="iconBg" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF9ABA"/>
+      <stop offset="1" stop-color="#F85D8E"/>
+    </linearGradient>
+
+    <!-- 文字渐变 -->
+    <linearGradient id="textGradient" x1="0" y1="0" x2="400" y2="100" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e0e0e0"/>
+    </linearGradient>
+
+    <!-- 光晕效果 -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="1200" height="400" fill="url(#bgGradient)"/>
+
+  <!-- 装饰性背景元素 -->
+  <circle cx="100" cy="80" r="60" fill="#FF9ABA" opacity="0.1"/>
+  <circle cx="1100" cy="320" r="80" fill="#F85D8E" opacity="0.1"/>
+  <circle cx="900" cy="60" r="40" fill="#FF9ABA" opacity="0.08"/>
+
+  <!-- 左侧图标区域 - 按比例缩放原始图标 -->
+  <g transform="translate(260, 100) scale(0.4)">
+    <!-- 圆角矩形背景 -->
+    <rect x="56" y="56" width="400" height="400" rx="96" fill="url(#iconBg)" filter="url(#glow)"/>
+
+    <!-- 白色卡片 -->
+    <rect x="132" y="112" width="248" height="288" rx="42" fill="white"/>
+
+    <!-- 右上角标签 -->
+    <path d="M314 112H340C362.091 112 380 129.909 380 152V178H354C331.909 178 314 160.091 314 138V112Z" fill="#FFE6EE"/>
+
+    <!-- 播放按钮圆形背景 -->
+    <circle cx="318" cy="172" r="32" fill="#FB7299"/>
+
+    <!-- 播放三角形 -->
+    <path d="M307 157L329 172L307 187V157Z" fill="white"/>
+
+    <!-- 标题线条 -->
+    <rect x="172" y="172" width="96" height="20" rx="10" fill="#FB7299"/>
+    <rect x="172" y="222" width="160" height="20" rx="10" fill="#FB7299" opacity="0.9"/>
+    <rect x="172" y="272" width="138" height="20" rx="10" fill="#FB7299" opacity="0.72"/>
+    <rect x="172" y="322" width="112" height="20" rx="10" fill="#FB7299" opacity="0.5"/>
+  </g>
+
+  <!-- 右侧文字区域 - 垂直居中 -->
+  <g transform="translate(540, 145)">
+    <!-- 产品名称 -->
+    <text x="0" y="50" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="68" font-weight="700" fill="url(#textGradient)" filter="url(#glow)">Echo</text>
+
+    <!-- 副标题/标语 -->
+    <text x="0" y="95" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="500" fill="#d8d8e8">AI 视频总结与知识库工具</text>
+    <text x="0" y="126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="400" fill="#9ca3b7">B 站深度优化 · YouTube 与本地视频 · RAG 问答与 Markdown 导出</text>
+
+    <!-- 装饰线 -->
+    <rect x="0" y="145" width="112" height="3" rx="1.5" fill="#F85D8E"/>
+
+    <!-- 特性标签 -->
+    <g transform="translate(0, 172)">
+      <rect x="0" y="0" width="96" height="28" rx="14" fill="#FF9ABA" opacity="0.2"/>
+      <text x="48" y="18" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600" fill="#FF9ABA" text-anchor="middle">B 站优化</text>
+
+      <rect x="108" y="0" width="96" height="28" rx="14" fill="#F85D8E" opacity="0.2"/>
+      <text x="156" y="18" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600" fill="#F85D8E" text-anchor="middle">知识卡片</text>
+
+      <rect x="216" y="0" width="96" height="28" rx="14" fill="#FF9ABA" opacity="0.2"/>
+      <text x="264" y="18" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600" fill="#FF9ABA" text-anchor="middle">RAG 问答</text>
+
+      <rect x="324" y="0" width="112" height="28" rx="14" fill="#F85D8E" opacity="0.2"/>
+      <text x="380" y="18" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600" fill="#F85D8E" text-anchor="middle">Obsidian 导出</text>
+    </g>
+  </g>
+
+  <!-- 右下角版本信息 -->
+  <g transform="translate(1050, 360)">
+    <text x="0" y="0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#606060">MIT License · Open Source</text>
+  </g>
+</svg>
