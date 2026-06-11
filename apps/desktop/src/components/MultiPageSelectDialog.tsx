@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useModalA11y } from "./useModalA11y";
 import type {
   PageAggregateStatus,
   VideoAssetSummary,
@@ -61,6 +62,14 @@ export function MultiPageSelectDialog({
   const totalConflictCount = confirmation?.conflict_pages.length ?? 0;
   const totalSkipCount = confirmation?.skipped_pages.length ?? 0;
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  const handleDismiss = useCallback(() => {
+    if (!submitting) {
+      onClose();
+    }
+  }, [submitting, onClose]);
+  useModalA11y(isOpen && Boolean(video), handleDismiss, panelRef);
+
   if (!isOpen || !video) {
     return null;
   }
@@ -96,10 +105,18 @@ export function MultiPageSelectDialog({
   const submitLabel = mode === "create" ? "批量生成摘要" : "批量重生成摘要";
 
   return (
-    <div className="update-dialog-overlay" onClick={() => !submitting && onClose()}>
-      <div className="update-dialog multi-page-dialog" onClick={(event) => event.stopPropagation()}>
+    <div className="update-dialog-overlay" onClick={handleDismiss}>
+      <div
+        className="update-dialog multi-page-dialog"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="multi-page-title"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="update-dialog-header">
-          <h2>{confirmation ? "确认批量处理" : title}</h2>
+          <h2 id="multi-page-title">{confirmation ? "确认批量处理" : title}</h2>
           <button className="close-button" onClick={onClose} aria-label="关闭" disabled={submitting}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M2 2L12 12M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />

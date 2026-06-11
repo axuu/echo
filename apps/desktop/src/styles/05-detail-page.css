@@ -384,7 +384,7 @@
 .detail-page-select:focus,
 .detail-page-switcher.is-open .detail-page-select {
   border-color: var(--brand-500);
-  box-shadow: 0 0 0 3px var(--bg-accent);
+  box-shadow: 0 0 0 3px var(--border-focus);
   background: var(--bg-canvas);
   outline: none;
 }
@@ -1570,7 +1570,7 @@
   margin: 0;
   font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.01em;
   color: var(--text-secondary);
   line-height: 1.4;
 }
@@ -1775,8 +1775,7 @@
 .detail-floating-player-kicker {
   font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
   color: var(--detail-accent);
 }
 
@@ -1802,6 +1801,57 @@
 
 .detail-floating-player-link:hover {
   text-decoration: underline;
+}
+
+.detail-floating-player-actions {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-floating-player-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.detail-floating-player-close:hover {
+  background: var(--bg-soft);
+  color: var(--text-primary);
+}
+
+.detail-floating-player-restore {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--detail-accent-border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  color: var(--detail-accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.detail-floating-player-restore:hover {
+  background: var(--bg-soft);
+  box-shadow: var(--shadow-lg);
 }
 
 .detail-video-embed-frame-floating {
@@ -1925,7 +1975,7 @@
   margin: 0;
   font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.01em;
   color: var(--text-secondary);
   line-height: 1.4;
 }
@@ -2369,10 +2419,8 @@
   max-width: 760px;
   margin-top: 0;
   margin-bottom: 18px;
-  padding: 8px 12px;
-  border-left: 2px solid color-mix(in srgb, var(--detail-accent) 60%, transparent);
-  background: color-mix(in srgb, var(--detail-accent) 8%, transparent);
-  color: var(--text-secondary);
+  padding: 6px 0;
+  color: var(--text-tertiary);
   font-size: 0.9rem;
   line-height: 1.6;
 }
@@ -2961,7 +3009,7 @@
   border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--brand-500) 30%, var(--border-subtle));
   background: color-mix(in srgb, var(--brand-500) 8%, var(--bg-soft));
-  color: var(--brand-600);
+  color: var(--brand-text);
   font-size: 0.78rem;
   font-family: var(--font-mono);
   font-weight: 600;

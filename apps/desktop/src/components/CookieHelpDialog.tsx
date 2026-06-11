@@ -1,3 +1,7 @@
+import { useRef } from "react";
+
+import { useModalA11y } from "./useModalA11y";
+
 type CookieHelpDialogProps = {
   isOpen: boolean;
   onClose(): void;
@@ -13,15 +17,26 @@ export function CookieHelpDialog({
   onOpenSettings,
   onCaptureLoginCookies,
 }: CookieHelpDialogProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalA11y(isOpen, onClose, panelRef);
+
   if (!isOpen) {
     return null;
   }
 
   return (
     <div className="update-dialog-overlay" onClick={onClose}>
-      <div className="update-dialog cookie-help-dialog" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="update-dialog cookie-help-dialog"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cookie-help-title"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="update-dialog-header">
-          <h2>B 站需要登录态</h2>
+          <h2 id="cookie-help-title">B 站需要登录态</h2>
           <button className="close-button" type="button" onClick={onClose} aria-label="关闭">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M2 2L12 12M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />

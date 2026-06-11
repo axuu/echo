@@ -1,13 +1,23 @@
-.update-dialog-overlay {
+.update-dialog-overlay,
+.dialog-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
   z-index: 2000;
   animation: fadeIn 200ms ease;
+}
+
+/* Small label above a panel heading (e.g. "HTTP 412", "批量生成").
+   Not an uppercase eyebrow — sentence/code case, brand-tinted. */
+.section-kicker {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--brand-text);
 }
 
 .update-dialog {

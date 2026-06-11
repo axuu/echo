@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { MarkdownContent } from "./MarkdownContent";
+import { useModalA11y } from "./useModalA11y";
 
 export type UpdateStatus = "idle" | "checking" | "available" | "not-available" | "downloading" | "downloaded" | "installing" | "error";
 
@@ -36,6 +37,9 @@ export function UpdateDialog({
 }: UpdateDialogProps) {
   const [isChecking, setIsChecking] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const isBusy = updateInfo?.status === "downloading" || updateInfo?.status === "checking" || updateInfo?.status === "installing";
+  useModalA11y(isOpen, onClose, panelRef);
 
   useEffect(() => {
     if (updateInfo?.status === "checking") {
@@ -214,10 +218,18 @@ export function UpdateDialog({
   };
 
   return (
-    <div className="update-dialog-overlay" onClick={onClose}>
-      <div className="update-dialog" onClick={(e) => e.stopPropagation()}>
+    <div className="update-dialog-overlay" onClick={isBusy ? undefined : onClose}>
+      <div
+        className="update-dialog"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="update-dialog-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="update-dialog-header">
-          <h2>检查更新</h2>
+          <h2 id="update-dialog-title">检查更新</h2>
           <button className="close-button" onClick={onClose} aria-label="关闭">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M2 2L12 12M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />

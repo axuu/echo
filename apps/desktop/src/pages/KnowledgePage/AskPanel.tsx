@@ -311,7 +311,6 @@ export function AskPanel({
       <div ref={threadRef} className="knowledge-chat-scroll" onScroll={updateScrollState}>
         {!hasMessages ? (
           <div className="knowledge-chat-welcome">
-            <span className="library-kicker">Knowledge Chat</span>
             <h2>直接问你的知识库</h2>
             <p>搜索、整理和追问你的视频知识库。</p>
             <div className="knowledge-chat-suggestion-grid">

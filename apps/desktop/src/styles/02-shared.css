@@ -398,6 +398,16 @@
   transition: all var(--transition-base);
 }
 
+.primary-button:disabled,
+.secondary-button:disabled,
+.tertiary-button:disabled,
+.danger-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .primary-button {
   color: var(--text-on-brand);
   background: var(--brand-500);
@@ -578,7 +588,7 @@
 .library-collection {
   border-radius: 28px;
   border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--bg-card);
   box-shadow: var(--shadow-sm);
 }
 
@@ -598,14 +608,6 @@
 .library-hero-copy {
   display: grid;
   gap: 8px;
-}
-
-.library-kicker {
-  font-size: 0.74rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--brand-600);
 }
 
 .library-hero-copy h2 {
@@ -650,7 +652,7 @@
   padding: 16px;
   border-radius: 24px;
   border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--bg-card);
   box-shadow: var(--shadow-sm);
 }
 
@@ -1087,7 +1089,7 @@
 }
 
 .library-breadcrumb {
-  color: var(--brand-600);
+  color: var(--brand-text);
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -1130,7 +1132,7 @@
 .library-segment:hover,
 .library-segment.is-active {
   background: var(--bg-card);
-  color: var(--brand-700);
+  color: var(--brand-text);
   box-shadow: var(--shadow-xs);
 }
 
@@ -1571,7 +1573,7 @@
   align-items: center;
   padding: 3px 8px;
   border-radius: var(--radius-pill);
-  color: var(--brand-700);
+  color: var(--brand-text);
   background: var(--bg-accent);
   border: 1px solid var(--accent-border);
   font-size: 0.7rem;

@@ -491,7 +491,6 @@ export function LibraryPage({
     <section className="library-page">
       <section className="library-hero">
         <div className="library-hero-copy">
-          <span className="library-kicker">Library</span>
           <h2>视频库</h2>
           <p>{summaryText}</p>
         </div>
@@ -1086,7 +1085,7 @@ function VideoListItem({
     <div ref={setNodeRef} style={style} className={`library-list-item ${className}`.trim()} onContextMenu={(event) => onOpenContextMenu?.(event, video.video_id)}>
       <span className="library-drag-handle" title="拖动排序" {...dragHandleProps}><GripVerticalIcon /></span>
       <Link className="library-list-cover" to={`/videos/${video.video_id}`} draggable={false}>
-        {video.cover_url ? <img src={video.cover_url} alt={video.title} loading="lazy" draggable={false} /> : <span>VIDEO</span>}
+        {video.cover_url ? <img src={video.cover_url} alt={video.title} loading="lazy" draggable={false} /> : <span>无封面</span>}
       </Link>
       <Link className="library-list-main" to={`/videos/${video.video_id}`} draggable={false}>
         <strong>{video.title}</strong>

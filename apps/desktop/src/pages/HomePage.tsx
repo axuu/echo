@@ -706,8 +706,13 @@ export function HomePage({
             onToggleFavorite={onToggleFavorite}
           />
         ) : (
-          <div className="empty-placeholder">
-            还没有视频，先输入一个链接开始总结吧。
+          <div className="empty-placeholder home-empty-state">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="2.5" />
+              <path d="m10 9.5 4.5 2.5L10 14.5z" fill="currentColor" stroke="none" />
+            </svg>
+            <strong>还没有视频</strong>
+            <p>在上方粘贴 B 站 / YouTube 链接，或导入本地视频，就能开始第一条总结。</p>
           </div>
         )}
       </div>

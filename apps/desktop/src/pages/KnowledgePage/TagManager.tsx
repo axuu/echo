@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api } from "../../api";
+import { useModalA11y } from "../../components/useModalA11y";
 import type { KnowledgeTagRecord } from "../../types";
 
 type TagManagerProps = {
@@ -29,6 +30,9 @@ export function TagManager({ videoId, title, onClose, onUpdated }: TagManagerPro
       cancelled = true;
     };
   }, [videoId]);
+
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalA11y(Boolean(videoId), onClose, panelRef);
 
   if (!videoId) {
     return null;
@@ -63,10 +67,18 @@ export function TagManager({ videoId, title, onClose, onUpdated }: TagManagerPro
 
   return (
     <div className="dialog-backdrop" role="presentation" onClick={onClose}>
-      <div className="knowledge-tag-manager" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="knowledge-tag-manager"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tag-manager-title"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="knowledge-section-head">
           <div>
-            <h3>管理标签</h3>
+            <h3 id="tag-manager-title">管理标签</h3>
             <p>{title || videoId}</p>
           </div>
           <button className="tertiary-button" type="button" onClick={onClose}>关闭</button>

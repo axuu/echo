@@ -2077,7 +2077,7 @@ export function SettingsPage({
           </section>
           <header className="settings-page-hero">
             <div className="settings-page-hero-copy">
-              <span className="settings-page-kicker">Settings</span>
+              <span className="settings-page-kicker">设置</span>
               <h1>{activeCategoryMeta.label}</h1>
               <p>{activeCategoryMeta.description}</p>
             </div>
@@ -2113,7 +2113,7 @@ export function SettingsPage({
           {configHealth.checked ? (
             <section className={`settings-config-health-card tone-${configHealth.state}`}>
               <div className="settings-config-health-copy">
-                <span className="settings-story-kicker">Setup Health</span>
+                <span className="settings-story-kicker">配置体检</span>
                 <h3>{configHealth.hasBlockingIssues ? "先补全关键配置，再开始处理视频" : configHealth.isConfigured ? "当前配置状态良好" : "建议补全增强能力配置"}</h3>
                 <p>{configHealth.summary}</p>
               </div>
@@ -2374,7 +2374,7 @@ export function SettingsPage({
 
               <div className="settings-update-overview" ref={registerFocusTarget("storage_cleanup") as (node: HTMLDivElement | null) => void}>
                 <div className="settings-update-copy">
-                  <span className="settings-story-kicker">Storage</span>
+                  <span className="settings-story-kicker">存储</span>
                   <h3>当前本地占用</h3>
                   <p>
                     已托管空间约 {formatStorageSize(storageOverview?.totals.managedBytes || 0)}，
@@ -4210,7 +4210,7 @@ export function SettingsPage({
               <div className="settings-update-module" ref={registerFocusTarget("app_updates") as (node: HTMLDivElement | null) => void}>
                 <div className="settings-update-overview">
                   <div className="settings-update-copy">
-                    <span className="settings-story-kicker">Update</span>
+                    <span className="settings-story-kicker">更新</span>
                     <h3>{canInstallUpdate ? "手动检查桌面端更新" : "手动检查最新版本"}</h3>
                     <p>{updateSummary}</p>
                   </div>
@@ -4526,7 +4526,7 @@ export function SettingsPage({
           <div className="settings-tasklist-panel" onClick={(event) => event.stopPropagation()}>
             <div className="settings-tasklist-header">
               <div className="settings-tasklist-copy">
-                <span className="settings-nav-brand-kicker">Tasklist</span>
+                <span className="settings-nav-brand-kicker">任务列表</span>
                 <strong>最近任务队列</strong>
                 <span>聚焦最近 {TASK_LIST_LIMIT} 条任务，方便确认 `queued` 与 `running` 的分布。</span>
               </div>

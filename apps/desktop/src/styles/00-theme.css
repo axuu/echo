@@ -13,6 +13,7 @@
   --brand-600: #f85d8e;
   --brand-700: #d94674;
   --brand-800: #c4355e;
+  --brand-text: var(--brand-800);
 
   --bg-base: #fafbfc;
   --bg-canvas: #ffffff;
@@ -21,6 +22,11 @@
   --bg-card: #ffffff;
   --bg-card-strong: #ffffff;
   --bg-elevated: #ffffff;
+  --surface-elevated: var(--bg-elevated);
+  --surface-raised: var(--bg-card-strong);
+  --surface-muted: var(--bg-soft);
+  --bg-hover: var(--bg-soft);
+  --bg-subtle-hover: var(--bg-soft);
 
   --bg-accent: rgba(251, 114, 153, 0.06);
   --bg-accent-strong: rgba(251, 114, 153, 0.1);
@@ -32,7 +38,7 @@
   --text-primary: #1a1a1a;
   --text-secondary: #3f4754;
   --text-tertiary: #5f6878;
-  --text-muted: #7e8898;
+  --text-muted: #6b7484;
   --text-inverse: #ffffff;
   --text-on-brand: #ffffff;
 
@@ -40,6 +46,7 @@
   --border-default: rgba(0, 0, 0, 0.1);
   --border-strong: rgba(0, 0, 0, 0.15);
   --border-focus: rgba(251, 114, 153, 0.4);
+  --border-faint: var(--border-subtle);
 
   --success: #22a866;
   --success-bg: rgba(34, 168, 102, 0.08);
@@ -62,8 +69,8 @@
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
 
   --settings-bg: #f6f7fa;
-  --settings-sidebar-bg: rgba(255, 255, 255, 0.92);
-  --settings-panel-bg: rgba(255, 255, 255, 0.92);
+  --settings-sidebar-bg: #ffffff;
+  --settings-panel-bg: #ffffff;
   --settings-muted-bg: #f8f9fc;
   --settings-elevated-bg: #ffffff;
   --settings-icon-bg: #f9fafc;
@@ -82,6 +89,7 @@
   --mindmap-control-bg: color-mix(in srgb, var(--bg-card) 92%, white 8%);
   --mindmap-control-hover-bg: var(--bg-subtle);
 
+  --radius-xs: 6px;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -122,7 +130,8 @@
   --text-primary: #f5f5f5;
   --text-secondary: #b0b0b0;
   --text-tertiary: #8a8a8a;
-  --text-muted: #666666;
+  --text-muted: #838383;
+  --brand-text: var(--brand-400);
 
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-default: rgba(255, 255, 255, 0.12);
@@ -141,8 +150,8 @@
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.5);
 
   --settings-bg: #141414;
-  --settings-sidebar-bg: rgba(30, 30, 30, 0.94);
-  --settings-panel-bg: rgba(28, 28, 28, 0.94);
+  --settings-sidebar-bg: #1e1e1e;
+  --settings-panel-bg: #1c1c1c;
   --settings-muted-bg: rgba(36, 36, 36, 0.98);
   --settings-elevated-bg: rgba(42, 42, 42, 0.98);
   --settings-icon-bg: rgba(40, 40, 40, 0.96);
@@ -233,4 +242,17 @@ textarea {
 #root {
   height: 100%;
   min-height: 100vh;
+}
+
+/* Global reduced-motion safety net: neutralize all animation/transition for
+   users who request it. Per-surface blocks below may add tailored fallbacks. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

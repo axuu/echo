@@ -344,6 +344,8 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
   const [taskContextLoading, setTaskContextLoading] = useState<Record<string, boolean>>({});
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>("knowledge");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [playerDismissed, setPlayerDismissed] = useState(false);
   const [taskPanelState, setTaskPanelState] = useState<TaskPanelState>("collapsed");
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [actionMenuSection, setActionMenuSection] = useState<"regenerate" | "batch" | "maintenance" | null>(null);
@@ -1699,7 +1701,7 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
                   setStatus(error instanceof Error ? error.message : "打开本地视频失败");
                 })}
               >
-                {(currentPage?.cover_url || video.cover_url) ? <img src={currentPage?.cover_url || video.cover_url} alt={currentPage ? `P${currentPage.page} ${video.title}` : video.title} loading="lazy" /> : <div className="video-detail-cover-placeholder">VIDEO</div>}
+                {(currentPage?.cover_url || video.cover_url) ? <img src={currentPage?.cover_url || video.cover_url} alt={currentPage ? `P${currentPage.page} ${video.title}` : video.title} loading="lazy" /> : <div className="video-detail-cover-placeholder">无封面</div>}
                 <div className="video-detail-cover-overlay">
                   <IconPlayCircle className="video-detail-play-icon" />
                 </div>
@@ -1707,12 +1709,12 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
               </button>
             ) : isLocalVideo ? (
               <div className="video-detail-cover">
-                {(currentPage?.cover_url || video.cover_url) ? <img src={currentPage?.cover_url || video.cover_url} alt={currentPage ? `P${currentPage.page} ${video.title}` : video.title} loading="lazy" /> : <div className="video-detail-cover-placeholder">VIDEO</div>}
+                {(currentPage?.cover_url || video.cover_url) ? <img src={currentPage?.cover_url || video.cover_url} alt={currentPage ? `P${currentPage.page} ${video.title}` : video.title} loading="lazy" /> : <div className="video-detail-cover-placeholder">无封面</div>}
                 <div className="detail-duration-badge">{formatDuration(currentPage?.duration ?? video.duration)}</div>
               </div>
             ) : (
               <a className="video-detail-cover" href={heroSourceTarget} target="_blank" rel="noreferrer">
-                {(currentPage?.cover_url || video.cover_url) ? <img src={currentPage?.cover_url || video.cover_url} alt={currentPage ? `P${currentPage.page} ${video.title}` : video.title} loading="lazy" /> : <div className="video-detail-cover-placeholder">VIDEO</div>}
+                {(currentPage?.cover_url || video.cover_url) ? <img src={currentPage?.cover_url || video.cover_url} alt={currentPage ? `P${currentPage.page} ${video.title}` : video.title} loading="lazy" /> : <div className="video-detail-cover-placeholder">无封面</div>}
                 <div className="video-detail-cover-overlay">
                   <IconPlayCircle className="video-detail-play-icon" />
                 </div>
@@ -2359,7 +2361,7 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
         <section className="video-detail-main">
           <article className="detail-workspace-card">
             <div className="detail-workspace-header">
-              <h3 className="detail-workspace-label">Knowledge Workspace</h3>
+              <h3 className="detail-workspace-label">知识工作台</h3>
               <div className="detail-workspace-meta">
                 <span className={`detail-workspace-signal ${contentState ? taskStatusClass(selectedTaskStatus) : "status-success"}`}>
                   <span className="detail-workspace-signal-dot" />
@@ -2371,14 +2373,37 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
             </div>
 
             <nav className="detail-tab-row" role="tablist" aria-label="详情工作台视图">
-              {detailTabs.map((tab) => (
+              {detailTabs.map((tab, index) => (
                 <button
                   key={tab.id}
+                  ref={(el) => { tabRefs.current[index] = el; }}
+                  id={`detail-tab-${tab.id}`}
                   className={`detail-tab ${activeTab === tab.id ? "active" : ""}`}
                   role="tab"
                   type="button"
                   aria-selected={activeTab === tab.id}
+                  aria-controls={`detail-panel-${tab.id}`}
+                  tabIndex={activeTab === tab.id ? 0 : -1}
                   onClick={() => setActiveTab(tab.id)}
+                  onKeyDown={(event) => {
+                    const lastIndex = detailTabs.length - 1;
+                    let nextIndex: number | null = null;
+                    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                      nextIndex = index === lastIndex ? 0 : index + 1;
+                    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                      nextIndex = index === 0 ? lastIndex : index - 1;
+                    } else if (event.key === "Home") {
+                      nextIndex = 0;
+                    } else if (event.key === "End") {
+                      nextIndex = lastIndex;
+                    }
+                    if (nextIndex === null) {
+                      return;
+                    }
+                    event.preventDefault();
+                    setActiveTab(detailTabs[nextIndex].id);
+                    tabRefs.current[nextIndex]?.focus();
+                  }}
                 >
                   <div className="detail-tab-topline">
                     <DetailTabIcon active={activeTab === tab.id} tab={tab.id} />
@@ -2393,12 +2418,12 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
               contentState ? (
                 <TaskStatePanel cookieHelpActions={cookieHelpActions} state={contentState} />
               ) : (
-                <section className="detail-tab-panel detail-export-target" ref={knowledgeExportRef}>
+                <section className="detail-tab-panel detail-export-target" ref={knowledgeExportRef} role="tabpanel" id="detail-panel-knowledge" aria-labelledby="detail-tab-knowledge">
                   <div className="detail-knowledge-lead">
                     <section className="detail-content-section detail-content-section-overview">
                       <div className="detail-section-heading">
                         <div className="detail-section-heading-main">
-                          <h3 className="detail-section-label">Overview</h3>
+                          <h3 className="detail-section-label">概览</h3>
                           {overviewCard?.meta ? <span className="detail-section-meta">{overviewCard.meta}</span> : null}
                         </div>
                         <button
@@ -2417,7 +2442,7 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
                       {localPlayerUrl ? (
                         <div className="detail-overview-player" ref={playerFrameRef}>
                           <div className="detail-section-heading">
-                            <h3 className="detail-section-label">Player</h3>
+                            <h3 className="detail-section-label">播放器</h3>
                             <span className="detail-section-meta detail-section-link">本地视频播放器</span>
                           </div>
                           <div className="detail-video-embed-frame">
@@ -2444,7 +2469,7 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
                       ) : playerEmbedUrl && playerDescriptor ? (
                         <div className="detail-overview-player" ref={playerFrameRef}>
                           <div className="detail-section-heading">
-                            <h3 className="detail-section-label">Player</h3>
+                            <h3 className="detail-section-label">播放器</h3>
                             <a className="detail-section-meta detail-section-link" href={playerDescriptor.sourceUrl} target="_blank" rel="noreferrer">{playerDescriptor.openLabel}</a>
                           </div>
                           <div className="detail-video-embed-frame">
@@ -2474,7 +2499,7 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
 
                     <section className="detail-content-section detail-content-section-keypoints">
                       <div className="detail-section-heading">
-                        <h3 className="detail-section-label">Key Points</h3>
+                        <h3 className="detail-section-label">要点</h3>
                         <span className="detail-section-meta">{keyPointCards.length} 条</span>
                       </div>
                       {keyPointCards.length ? (
@@ -2491,7 +2516,7 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
 
                   <section className="detail-content-section detail-content-section-last">
                     <div className="detail-section-heading">
-                      <h3 className="detail-section-label">Chapters</h3>
+                      <h3 className="detail-section-label">章节</h3>
                       <div className="detail-section-heading-actions">
                         {chapterGroups.length ? (
                           <button
@@ -2556,10 +2581,10 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
               contentState ? (
                 <TaskStatePanel cookieHelpActions={cookieHelpActions} state={contentState} />
               ) : (
-                <section className="detail-tab-panel">
+                <section className="detail-tab-panel" role="tabpanel" id="detail-panel-summary" aria-labelledby="detail-tab-summary">
                   <section className="detail-content-section">
                     <div className="detail-section-heading">
-                      <h3 className="detail-section-label">Knowledge Note</h3>
+                      <h3 className="detail-section-label">知识笔记</h3>
                       <div className="detail-section-heading-actions">
                         <span className="detail-section-meta">完整学习视图 · {knowledgeNoteModeLabel}</span>
                         <div className="detail-section-menu" ref={knowledgeNoteModeMenuRef}>
@@ -2707,7 +2732,7 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
 
                   <section className="detail-content-section">
                     <div className="detail-section-heading">
-                      <h3 className="detail-section-label">Transcript</h3>
+                      <h3 className="detail-section-label">转写</h3>
                       <div className="detail-section-heading-actions">
                         <span className="detail-section-meta">{selectedTranscript ? "原始转写" : "暂无内容"}</span>
                         <button
@@ -2743,10 +2768,10 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
             ) : null}
 
             {activeTab === "mindmap" ? (
-              <section className="detail-tab-panel">
+              <section className="detail-tab-panel" role="tabpanel" id="detail-panel-mindmap" aria-labelledby="detail-tab-mindmap">
                 <section className="detail-content-section detail-content-section-last">
                   <div className="detail-section-heading">
-                    <h3 className="detail-section-label">Mind Map</h3>
+                    <h3 className="detail-section-label">思维导图</h3>
                     <div className="detail-section-heading-actions">
                       <span className="detail-section-meta">{mindMapMeta}</span>
                     </div>
@@ -2935,14 +2960,28 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
             />
 
             {(activeTab === "summary" || activeTab === "mindmap") && (localPlayerUrl || (playerEmbedUrl && playerDescriptor)) ? (
-              <FloatingVideoPlayer
-                embedUrl={playerEmbedUrl}
-                localVideoUrl={localPlayerUrl}
-                openLabel={playerDescriptor?.openLabel}
-                sourceUrl={playerDescriptor?.sourceUrl}
-                seekTarget={playerSeekTarget}
-                title={video.title}
-              />
+              playerDismissed ? (
+                <button
+                  type="button"
+                  className="detail-floating-player-restore"
+                  onClick={() => setPlayerDismissed(false)}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                  显示播放器
+                </button>
+              ) : (
+                <FloatingVideoPlayer
+                  embedUrl={playerEmbedUrl}
+                  localVideoUrl={localPlayerUrl}
+                  openLabel={playerDescriptor?.openLabel}
+                  sourceUrl={playerDescriptor?.sourceUrl}
+                  seekTarget={playerSeekTarget}
+                  title={video.title}
+                  onClose={() => setPlayerDismissed(true)}
+                />
+              )
             ) : null}
           </article>
         </section>
@@ -3490,6 +3529,7 @@ function FloatingVideoPlayer({
   sourceUrl,
   seekTarget,
   title,
+  onClose,
 }: {
   embedUrl: string | null;
   localVideoUrl: string | null;
@@ -3497,6 +3537,7 @@ function FloatingVideoPlayer({
   sourceUrl?: string | null;
   seekTarget: PlayerSeekTarget;
   title: string;
+  onClose: () => void;
 }) {
   const pointerStateRef = useRef<{
     mode: "drag" | "resize";
@@ -3599,20 +3640,34 @@ function FloatingVideoPlayer({
     >
       <div className="detail-floating-player-head" onPointerDown={(event) => handlePointerStart("drag", event)}>
         <div className="detail-floating-player-copy">
-          <span className="detail-floating-player-kicker">Player</span>
+          <span className="detail-floating-player-kicker">播放器</span>
           <strong>{title}</strong>
         </div>
-        {sourceUrl && openLabel ? (
-          <a
-            className="detail-floating-player-link"
-            href={sourceUrl}
-            target="_blank"
-            rel="noreferrer"
+        <div className="detail-floating-player-actions">
+          {sourceUrl && openLabel ? (
+            <a
+              className="detail-floating-player-link"
+              href={sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              {openLabel}
+            </a>
+          ) : null}
+          <button
+            type="button"
+            className="detail-floating-player-close"
+            aria-label="关闭播放器"
+            title="关闭播放器"
             onPointerDown={(event) => event.stopPropagation()}
+            onClick={onClose}
           >
-            {openLabel}
-          </a>
-        ) : null}
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div className="detail-video-embed-frame detail-video-embed-frame-floating">
         {localVideoUrl ? (
@@ -3655,7 +3710,7 @@ function TaskStatePanel({
   return (
     <section className={`detail-state-panel tone-${state.tone}`} role="status">
       <div className="detail-state-copy">
-        <h3 className="detail-section-label">Workspace State</h3>
+        <h3 className="detail-section-label">任务状态</h3>
         <h4 className="detail-section-title">{state.title}</h4>
         <p className="detail-section-body">{state.description}</p>
         {state.detail ? <pre className="detail-state-detail">{state.detail}</pre> : null}

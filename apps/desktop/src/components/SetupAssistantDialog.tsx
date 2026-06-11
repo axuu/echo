@@ -35,7 +35,7 @@ export function SetupAssistantDialog({
 
         <div className="update-dialog-body setup-assistant-body">
           <div className={`setup-assistant-hero tone-${configHealth.state}`}>
-            <span className="section-kicker">Setup Assistant</span>
+            <span className="section-kicker">配置助手</span>
             <strong>
               {configHealth.issues.length === 0
                 ? "当前运行配置完整，可以直接开始总结"

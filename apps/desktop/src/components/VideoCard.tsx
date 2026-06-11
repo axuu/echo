@@ -63,10 +63,10 @@ export function VideoCard({
         {video.cover_url ? (
           <>
             <img src={video.cover_url} alt={video.title} loading="lazy" draggable={false} onError={handleImageError} />
-            <div className="video-card-placeholder is-hidden">VIDEO</div>
+            <div className="video-card-placeholder is-hidden">无封面</div>
           </>
         ) : (
-          <div className="video-card-placeholder">VIDEO</div>
+          <div className="video-card-placeholder">无封面</div>
         )}
         {onToggleFavorite ? (
           <button
