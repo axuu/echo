@@ -6,9 +6,6 @@ import {
   Snapshot,
   UpdateState,
   devicePreferenceLabel,
-  formatShortDate,
-  getUpdateStatusLabel,
-  getUpdateStatusTone,
   getUpdateSummary,
   getConfigHealth,
   isUpdateUnsupported,
@@ -1023,8 +1020,6 @@ export function SettingsPage({
           ? Boolean(form?.multimodal_asr_api_key_configured && String(form?.multimodal_asr_base_url || "").trim() && String(form?.multimodal_asr_model || "").trim())
           : Boolean(form?.siliconflow_asr_api_key_configured);
   const updateUnsupported = isUpdateUnsupported(updateInfo);
-  const updateStatusLabel = getUpdateStatusLabel(updateInfo);
-  const updateStatusTone = getUpdateStatusTone(updateInfo);
   const updateSummary = getUpdateSummary(updateInfo, currentVersion);
   const updateActionBusy = updateInfo.status === "checking" || updateInfo.status === "downloading" || updateInfo.status === "installing";
 
@@ -2048,39 +2043,11 @@ export function SettingsPage({
               <h1>{activeCategoryMeta.label}</h1>
               <p>{activeCategoryMeta.description}</p>
             </div>
-            <div className="settings-page-hero-meta">
-              <span className={`settings-hero-chip ${serviceOnline ? "is-success" : backendRunning ? "is-warning" : "is-danger"}`}>
-                {serviceOnline ? "服务在线" : backendRunning ? "启动中..." : "服务离线"}
-              </span>
-              <span className={`settings-hero-chip ${configHealth.hasBlockingIssues ? "is-danger" : !configHealth.isConfigured ? "is-warning" : "is-success"}`}>
-                {configHealth.hasBlockingIssues ? "配置缺失" : configHealth.isConfigured ? "配置完整" : "配置待补全"}
-              </span>
-              <span className="settings-hero-chip">
-                {environment?.runtimeChannel || form.runtime_channel || "base"}
-              </span>
-              <span className={`settings-hero-chip ${(form.transcription_provider === "funasr" ? form.funasr_device === "cuda" : environment?.cudaAvailable) ? "is-success" : ""}`}>
-                {form.transcription_provider === "funasr"
-                  ? (form.funasr_device === "cuda" ? "GPU (CUDA)" : "CPU")
-                  : form.transcription_provider === "local"
-                    ? devicePreferenceLabel(form.whisper_device)
-                    : environment?.cudaAvailable
-                      ? "CUDA Ready"
-                      : "CPU Only"}
-              </span>
-              <span className={`settings-hero-chip ${llmReady ? "is-success" : ""}`}>
-                {llmReady ? "LLM 已配置" : form.llm_enabled ? "LLM 待补全" : "LLM 关闭"}
-              </span>
-              <span className={`settings-hero-chip ${form.knowledge_enabled && environment?.knowledgeDependenciesReady ? "is-success" : form.knowledge_enabled && environment?.runtimeReady !== undefined ? "is-warning" : ""}`}>
-                {!environment?.runtimeReady && !environment?.runtimeError ? "检测中..."
-                  : form.knowledge_enabled ? (environment?.knowledgeDependenciesReady ? "知识库就绪" : "需安装依赖") : "知识库关闭"}
-              </span>
-            </div>
           </header>
 
           {configHealth.checked ? (
             <section className={`settings-config-health-card tone-${configHealth.state}`}>
               <div className="settings-config-health-copy">
-                <span className="settings-story-kicker">配置体检</span>
                 <h3>{configHealth.hasBlockingIssues ? "先补全关键配置，再开始处理视频" : configHealth.isConfigured ? "当前配置状态良好" : "建议补全增强能力配置"}</h3>
                 <p>{configHealth.summary}</p>
               </div>
@@ -2106,7 +2073,6 @@ export function SettingsPage({
             <OverviewSection
               form={form}
               environment={environment}
-              desktop={desktop}
               serviceOnline={serviceOnline}
               asrReady={asrReady}
               funasrInstalled={funasrInstalled}
@@ -3614,8 +3580,6 @@ export function SettingsPage({
               currentVersion={currentVersion}
               updateInfo={updateInfo}
               updateUnsupported={updateUnsupported}
-              updateStatusLabel={updateStatusLabel}
-              updateStatusTone={updateStatusTone}
               updateSummary={updateSummary}
               updateActionBusy={updateActionBusy}
               canCheckUpdate={canCheckUpdate}

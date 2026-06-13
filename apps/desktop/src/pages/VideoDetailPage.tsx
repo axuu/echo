@@ -2169,7 +2169,6 @@ export function VideoDetailPage({ refreshToken = 0, onRefresh, onOpenCookieSetti
                                 <strong>{liveTaskTitle}</strong>
                                 <small>{liveTaskCode ? `任务 ${liveTaskCode}` : "任务信息加载中"}</small>
                               </div>
-                              <span className={`helper-chip ${taskStatusClass(liveStatus)}`}>{taskStatusLabel(liveStatus)}</span>
                             </div>
                             <div className="detail-task-snapshot-grid">
                               {liveTaskSnapshot.map((item) => (

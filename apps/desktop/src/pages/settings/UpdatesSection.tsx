@@ -1,12 +1,10 @@
-import { formatShortDate, type UpdateState } from "../../appModel";
+import type { UpdateState } from "../../appModel";
 
 type UpdatesSectionProps = {
   registerFocusTarget: (targetKey: string) => (node: HTMLElement | null) => void;
   currentVersion: string;
   updateInfo: UpdateState;
   updateUnsupported: boolean;
-  updateStatusLabel: string;
-  updateStatusTone: string;
   updateSummary: string;
   updateActionBusy: boolean;
   canCheckUpdate: boolean;
@@ -22,8 +20,6 @@ export function UpdatesSection({
   currentVersion,
   updateInfo,
   updateUnsupported,
-  updateStatusLabel,
-  updateStatusTone,
   updateSummary,
   updateActionBusy,
   canCheckUpdate,
@@ -42,56 +38,41 @@ export function UpdatesSection({
       <div className="settings-update-module" ref={registerFocusTarget("app_updates")}>
         <div className="settings-update-overview">
           <div className="settings-update-copy">
-            <span className="settings-story-kicker">更新</span>
             <h3>{canInstallUpdate ? "手动检查桌面端更新" : "手动检查最新版本"}</h3>
             <p>{updateSummary}</p>
           </div>
-          <div className="settings-update-badges">
-            <span className="helper-chip">当前版本 v{currentVersion}</span>
-            <span className={`helper-chip status-${updateStatusTone}`}>状态：{updateStatusLabel}</span>
-            {updateInfo.version ? <span className="helper-chip">最新版本 v{updateInfo.version}</span> : null}
-            {updateInfo.releaseDate ? <span className="helper-chip">发布时间 {formatShortDate(updateInfo.releaseDate)}</span> : null}
-          </div>
         </div>
 
-        <div className="settings-update-grid">
-          <div className="settings-update-panel">
-            <span className="settings-update-label">当前安装版本</span>
-            <strong>v{currentVersion}</strong>
-            <p>{canInstallUpdate ? "检查、下载和安装更新。" : "当前环境仅支持检查最新版本。"}</p>
-          </div>
-
-          <div className={`settings-update-panel ${updateInfo.status === "available" || updateInfo.status === "downloaded" ? "is-highlight" : ""}`}>
-            <span className="settings-update-label">检查结果</span>
-            <strong>
-              {updateUnsupported
-                ? "当前环境不可更新"
+        <div className={`settings-update-panel ${updateInfo.status === "available" || updateInfo.status === "downloaded" ? "is-highlight" : ""}`}>
+          <span className="settings-update-label">当前 v{currentVersion}</span>
+          <strong>
+            {updateUnsupported
+              ? "当前环境不可更新"
+              : updateInfo.status === "available" || updateInfo.status === "downloaded"
+              ? `发现新版本 v${updateInfo.version || "-"}`
+              : updateInfo.status === "not-available"
+                ? "已是最新版本"
+                : updateInfo.status === "error"
+                  ? "检查失败"
+                  : updateInfo.status === "checking"
+                    ? "正在检查"
+                    : updateInfo.status === "downloading"
+                      ? `下载中 ${Math.round(updateInfo.downloadProgress)}%`
+                      : updateInfo.status === "installing"
+                        ? "正在安装"
+                        : "等待检查"}
+          </strong>
+          <p>
+            {!canInstallUpdate && updateInfo.status === "available"
+              ? `已检测到 v${updateInfo.version || "-"}，请使用桌面安装包完成更新。`
+              : !canInstallUpdate && updateInfo.status === "not-available"
+                ? "当前环境可查看最新版本信息，但不支持自动下载或安装。"
                 : updateInfo.status === "available" || updateInfo.status === "downloaded"
-                ? `发现 v${updateInfo.version || "-"}`
-                : updateInfo.status === "not-available"
-                  ? "已是最新版本"
+                  ? `最新 v${updateInfo.version || "-"}，${canInstallUpdate ? "可下载安装。" : "请使用桌面安装包更新。"}`
                   : updateInfo.status === "error"
-                    ? "检查失败"
-                    : updateInfo.status === "checking"
-                      ? "正在检查"
-                      : updateInfo.status === "downloading"
-                        ? `下载中 ${Math.round(updateInfo.downloadProgress)}%`
-                        : updateInfo.status === "installing"
-                          ? "正在安装"
-                          : "等待检查"}
-            </strong>
-            <p>
-              {!canInstallUpdate && updateInfo.status === "available"
-                ? `已检测到 v${updateInfo.version || "-"}，请使用桌面安装包完成更新。`
-                : !canInstallUpdate && updateInfo.status === "not-available"
-                  ? "当前环境可查看最新版本信息，但不支持自动下载或安装。"
-                  : updateInfo.status === "available" || updateInfo.status === "downloaded"
-                    ? `当前 v${currentVersion}，最新 v${updateInfo.version || "-"}`
-                    : updateInfo.status === "error"
-                      ? (updateInfo.errorMessage || "更新检查失败，请重试。")
-                      : updateSummary}
-            </p>
-          </div>
+                    ? (updateInfo.errorMessage || "更新检查失败，请重试。")
+                    : updateSummary}
+          </p>
         </div>
 
         <div className="settings-update-actions">

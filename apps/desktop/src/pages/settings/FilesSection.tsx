@@ -76,7 +76,6 @@ export function FilesSection({
 
               <div className="settings-update-overview" ref={registerFocusTarget("storage_cleanup")}>
                 <div className="settings-update-copy">
-                  <span className="settings-story-kicker">存储</span>
                   <h3>当前本地占用</h3>
                   <p>
                     已托管空间约 {formatStorageSize(storageOverview?.totals.managedBytes || 0)}，
@@ -84,13 +83,13 @@ export function FilesSection({
                     ，{formatStorageCount(storageOverview?.totals.managedDirectories || 0, "目录")}。
                   </p>
                 </div>
-                <div className="settings-update-badges">
-                  <span className="helper-chip">{storageLoading ? "扫描中..." : "统计已就绪"}</span>
-                  <span className={`helper-chip ${cleanupReady ? "status-success" : "status-pending"}`}>
-                    {cleanupReady ? "可校验引用关系" : "服务离线，禁用清理"}
-                  </span>
-                  <span className="helper-chip">可回收 {formatStorageSize(cleanupTargetBytes)}</span>
-                </div>
+                <p className="settings-update-meta">
+                  {storageLoading ? "扫描中..." : "统计已就绪"}
+                  {" · "}
+                  {cleanupReady ? "可校验引用关系" : "服务离线，禁用清理"}
+                  {" · "}
+                  可回收 {formatStorageSize(cleanupTargetBytes)}
+                </p>
               </div>
 
               <div className="settings-storage-grid">

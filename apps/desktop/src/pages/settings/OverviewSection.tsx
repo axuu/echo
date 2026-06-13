@@ -1,13 +1,12 @@
 import type { Dispatch, SetStateAction } from "react";
 
-import { devicePreferenceLabel, type DesktopState } from "../../appModel";
+import { devicePreferenceLabel } from "../../appModel";
 import type { EnvironmentInfo, ServiceSettings } from "../../types";
 import type { SettingsCategory } from "../settingsConfig";
 
 type OverviewSectionProps = {
   form: ServiceSettings;
   environment: EnvironmentInfo | null;
-  desktop: DesktopState;
   serviceOnline: boolean;
   asrReady: boolean;
   funasrInstalled: boolean;
@@ -19,7 +18,6 @@ type OverviewSectionProps = {
 export function OverviewSection({
   form,
   environment,
-  desktop,
   serviceOnline,
   asrReady,
   funasrInstalled,
@@ -33,28 +31,6 @@ export function OverviewSection({
                 <h2>设置总览</h2>
                 <p>查看当前配置、运行状态和常用操作。</p>
               </header>
-
-              <div className="settings-story-card">
-                <div className="settings-story-copy">
-                  <span className="settings-story-kicker">概览</span>
-                  <h3>当前配置与运行状态</h3>
-                  <p>这里展示运行环境、模型、摘要模式和服务状态。排障时请切换到环境检测或日志。</p>
-                </div>
-                <div className="settings-story-stats">
-                  <div className="settings-story-stat">
-                    <span>服务端口</span>
-                    <strong>{form.host}:{form.port}</strong>
-                  </div>
-                  <div className="settings-story-stat">
-                    <span>转写</span>
-                    <strong>{form.transcription_provider === "siliconflow" ? "SiliconFlow API" : form.transcription_provider === "funasr" ? "FunASR" : form.transcription_provider === "multimodal" ? "多模态 ASR" : "Whisper 转写"}</strong>
-                  </div>
-                  <div className="settings-story-stat">
-                    <span>摘要模式</span>
-                    <strong>{form.summary_mode === "llm" ? "LLM 智能摘要" : "抽取式摘要"}</strong>
-                  </div>
-                </div>
-              </div>
 
               <div className="overview-status-grid">
                 <div className="overview-status-card">
@@ -148,66 +124,6 @@ export function OverviewSection({
                     <strong className={`overview-status-value ${autoMindMapReady ? "text-success" : ""}`}>
                       {autoMindMapReady ? "已启用" : "已关闭"}
                     </strong>
-                  </div>
-                </div>
-              </div>
-
-              <div className="overview-section">
-                <h3 className="overview-section-title">环境信息</h3>
-                <div className="overview-info-grid">
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">Python</span>
-                    <span className="overview-info-value">{environment?.pythonVersion || "-"}</span>
-                  </div>
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">Torch</span>
-                    <span className={`overview-info-value ${environment?.torchInstalled ? "text-success" : ""}`}>
-                      {environment?.torchInstalled ? environment?.torchVersion || "已安装" : "未安装"}
-                    </span>
-                  </div>
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">GPU</span>
-                    <span className={`overview-info-value ${environment?.cudaAvailable ? "text-success" : ""}`}>
-                      {environment?.cudaAvailable ? environment?.gpuName || "已就绪" : "未检测到"}
-                    </span>
-                  </div>
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">yt-dlp</span>
-                    <span className="overview-info-value">{environment?.ytDlpVersion || "-"}</span>
-                  </div>
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">{form.transcription_provider === "funasr" ? "FunASR" : "Whisper"}</span>
-                    <span className={`overview-info-value ${environment?.localAsrInstalled ? "text-success" : ""}`}>
-                      {environment?.localAsrInstalled ? environment?.localAsrVersion || "已安装" : "未安装"}
-                    </span>
-                  </div>
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">FFmpeg</span>
-                    <span className={`overview-info-value ${environment?.ffmpegLocation ? "text-success" : ""}`}>
-                      {environment?.ffmpegLocation ? "已安装" : "未安装"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="overview-section">
-                <h3 className="overview-section-title">版本信息</h3>
-                <div className="overview-info-grid">
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">应用版本</span>
-                    <span className="overview-info-value">v{desktop.version || "-"}</span>
-                  </div>
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">监听地址</span>
-                    <span className="overview-info-value">{form.host}:{form.port}</span>
-                  </div>
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">语言</span>
-                    <span className="overview-info-value">{form.language === "zh" ? "中文" : form.language === "en" ? "English" : "日本語"}</span>
-                  </div>
-                  <div className="overview-info-item">
-                    <span className="overview-info-label">ASR 模型</span>
-                    <span className="overview-info-value">{form.transcription_provider === "local" ? form.fixed_model : form.transcription_provider === "multimodal" ? form.multimodal_asr_model : form.siliconflow_asr_model}</span>
                   </div>
                 </div>
               </div>
