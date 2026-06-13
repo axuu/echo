@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "dev": "npm --prefix apps/desktop run dev",
+    "sync:python": "uv sync --all-packages --inexact",
+    "sync:dev": "npm run sync:python && npm --prefix apps/desktop install",
     "dev:macUI": "npm --prefix apps/desktop run dev:macUI",
     "dev:desktop": "npm --prefix apps/desktop run dev",
     "build:web": "npm --prefix apps/desktop run build:renderer",
