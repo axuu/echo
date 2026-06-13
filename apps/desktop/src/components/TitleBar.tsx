@@ -155,15 +155,15 @@ export function TitleBar({
             </div>
             <div className="title-bar-status-stack">
               <div className={`sidebar-status-item ${serviceOnline ? "is-success" : ""}`}>
-                <span>服务</span>
+                <span>Echo 服务</span>
                 <strong>{serviceStatusText}</strong>
               </div>
               <div className={`sidebar-status-item ${runtimeReady ? "is-success" : serviceOnline ? "is-warning" : ""}`}>
-                <span>运行环境</span>
+                <span>转写引擎</span>
                 <strong>{runtimeStatusText}</strong>
               </div>
               <div className={`sidebar-status-item ${configHealth.hasBlockingIssues ? "is-danger" : !configHealth.isConfigured ? "is-warning" : "is-success"}`}>
-                <span>配置</span>
+                <span>必填配置</span>
                 <strong>{configStatusText}</strong>
               </div>
               <button
@@ -175,7 +175,7 @@ export function TitleBar({
                 <strong>{updateStatusText}</strong>
               </button>
               <div className="sidebar-status-item">
-                <span>设备</span>
+                <span>推理设备</span>
                 <strong>{runtimeDeviceLabel}</strong>
               </div>
               <button

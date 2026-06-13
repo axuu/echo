@@ -328,70 +328,6 @@
   color: var(--settings-text-soft);
 }
 
-.overview-status-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-}
-
-.overview-status-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px;
-  background: var(--settings-elevated-bg);
-  border-radius: 22px;
-  border: 1px solid var(--settings-border);
-  transition: all var(--transition-base);
-}
-
-.overview-status-card:hover {
-  border-color: var(--settings-accent-border);
-  box-shadow: var(--settings-shadow);
-}
-
-.overview-status-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 16px;
-  background: var(--settings-accent-bg);
-  display: grid;
-  place-items: center;
-  color: var(--brand-600);
-  flex-shrink: 0;
-  border: 1px solid var(--settings-accent-border);
-}
-
-.overview-status-info {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.overview-status-label {
-  font-size: 0.8rem;
-  color: var(--text-tertiary);
-}
-
-.overview-status-value {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.overview-section {
-  display: grid;
-  gap: 16px;
-}
-
-.overview-section-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--settings-text-strong);
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--settings-border);
-}
 
 .settings-update-module {
   display: grid;
@@ -557,11 +493,6 @@
   color: var(--settings-text-soft);
 }
 
-.overview-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
 
 .settings-form-group {
   display: grid;

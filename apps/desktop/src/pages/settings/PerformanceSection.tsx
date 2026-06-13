@@ -59,32 +59,6 @@ export function PerformanceSection({
                 </div>
               </div>
             </section>
-            <section className="settings-category-section">
-              <header className="settings-category-header">
-                <h2>资源策略</h2>
-                <p>根据机器和任务规模调整 CUDA 版本、运行环境通道和缓存策略。</p>
-              </header>
-              <div className="settings-form-group">
-                <label className="settings-input-group" ref={registerFocusTarget("cuda_variant")}>
-                  <span className="settings-input-label">CUDA 变体</span>
-                  <select className="settings-select-field" value={form.cuda_variant} onChange={(e) => updateForm({ ...form, cuda_variant: e.target.value })}>
-                    <option value="cu128">CUDA 12.8</option>
-                    <option value="cu126">CUDA 12.6</option>
-                    <option value="cu124">CUDA 12.4</option>
-                  </select>
-                  <span className="settings-input-caption">PyTorch CUDA 版本</span>
-                </label>
-                <label className="settings-input-group" ref={registerFocusTarget("runtime_channel")}>
-                  <span className="settings-input-label">运行环境通道</span>
-                  <select className="settings-select-field" value={form.runtime_channel} onChange={(e) => updateForm({ ...form, runtime_channel: e.target.value })}>
-                    <option value="base">基础版</option>
-                    <option value="gpu-cu128">GPU CUDA12.8</option>
-                    <option value="gpu-cu126">GPU CUDA12.6</option>
-                    <option value="gpu-cu124">GPU CUDA12.4</option>
-                  </select>
-                </label>
-              </div>
-            </section>
     </>
   );
 }

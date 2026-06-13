@@ -78,7 +78,6 @@ export function LogsSection({
               <div className="settings-cuda-section">
                 <h3 className="settings-cuda-title">服务状态</h3>
                 <div className="control-status-row" ref={registerFocusTarget("service_logs")}>
-                  <span className={`helper-chip ${serviceOnline ? "status-success" : backendRunning ? "status-running" : "status-failed"}`}>{serviceOnline ? "服务在线" : backendRunning ? "启动中..." : "服务离线"}</span>
                   <span className={`helper-chip ${backendRunning ? (backendReady ? "status-success" : "status-running") : "status-pending"}`}>
                     {backendRunning ? (backendReady ? "内置后端运行中" : "内置后端启动中") : "内置后端未运行"}
                   </span>

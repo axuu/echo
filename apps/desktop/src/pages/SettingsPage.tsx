@@ -24,7 +24,7 @@ import { UpdatesSection } from "./settings/UpdatesSection";
 import { LogsSection } from "./settings/LogsSection";
 import { PerformanceSection } from "./settings/PerformanceSection";
 import { FilesSection } from "./settings/FilesSection";
-import { OverviewSection } from "./settings/OverviewSection";
+
 
 function SiliconFlowApiKeyHelp() {
   return (
@@ -74,6 +74,16 @@ type SettingsPageProps = {
   onOpenUpdateDialog(): void;
   onOpenSetupAssistant(): void;
 };
+
+const RUNTIME_CHANNEL_LABELS: Record<string, string> = {
+  base: "基础版（CPU）",
+  "gpu-cu128": "GPU CUDA 12.8",
+  "gpu-cu126": "GPU CUDA 12.6",
+  "gpu-cu124": "GPU CUDA 12.4",
+};
+function runtimeChannelLabel(channel: string): string {
+  return RUNTIME_CHANNEL_LABELS[channel] || channel;
+}
 
 const TASK_LIST_LIMIT = 60;
 type GenerationModelDialog = "main" | "visual" | null;
@@ -373,7 +383,7 @@ export function SettingsPage({
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageCleaning, setStorageCleaning] = useState(false);
   const [storageStatus, setStorageStatus] = useState("");
-  const [activeCategory, setActiveCategory] = useState<SettingsCategory>("overview");
+  const [activeCategory, setActiveCategory] = useState<SettingsCategory>("video");
   const [pendingFocusTarget, setPendingFocusTarget] = useState<string | null>(null);
   const [activeFocusTarget, setActiveFocusTarget] = useState<string | null>(null);
   const [knowledgePromptGuideOpen, setKnowledgePromptGuideOpen] = useState(false);
@@ -955,7 +965,6 @@ export function SettingsPage({
   const backendReady = Boolean(desktop.backend?.ready);
   const serviceOnline = snapshot.serviceOnline;
   const effectiveLogPath = logPath || snapshot.systemInfo?.service?.log_file || desktop.logPath || "-";
-  const targetRuntimeChannel = `gpu-${form?.cuda_variant || "cu128"}`;
   const workflowCategories = settingsCategories.filter((category) => category.group === "workflow");
   const systemCategories = settingsCategories.filter((category) => category.group === "system");
   const normalizedSettingsSearchQuery = settingsSearchQuery.trim().toLowerCase();
@@ -1008,16 +1017,7 @@ export function SettingsPage({
   const knowledgeLlmReady = knowledgeLlmUsesCustom
     ? Boolean(form?.knowledge_llm_enabled && knowledgeLlmApiKeyReady && String(form?.knowledge_llm_base_url || "").trim() && String(form?.knowledge_llm_model || "").trim())
     : Boolean(form?.llm_enabled && llmApiKeyReady && String(form?.llm_base_url || "").trim() && String(form?.llm_model || "").trim());
-  const autoMindMapReady = Boolean(form?.auto_generate_mindmap);
   const currentVersion = desktop.version || snapshot.systemInfo?.application?.version || "-";
-  const asrReady =
-    form?.transcription_provider === "local"
-      ? Boolean(environment?.localAsrAvailable)
-      : form?.transcription_provider === "funasr"
-        ? Boolean(environment?.funasrAvailable)
-        : form?.transcription_provider === "multimodal"
-          ? Boolean(form?.multimodal_asr_api_key_configured && String(form?.multimodal_asr_base_url || "").trim() && String(form?.multimodal_asr_model || "").trim())
-          : Boolean(form?.siliconflow_asr_api_key_configured);
   const updateUnsupported = isUpdateUnsupported(updateInfo);
   const updateSummary = getUpdateSummary(updateInfo, currentVersion);
   const updateActionBusy = updateInfo.status === "checking" || updateInfo.status === "downloading" || updateInfo.status === "installing";
@@ -2021,20 +2021,6 @@ export function SettingsPage({
             </section>
           ) : null}
 
-          {activeCategory === "overview" && (
-            <OverviewSection
-              form={form}
-              environment={environment}
-              serviceOnline={serviceOnline}
-              asrReady={asrReady}
-              funasrInstalled={funasrInstalled}
-              localAsrInstalled={localAsrInstalled}
-              autoMindMapReady={autoMindMapReady}
-              setActiveCategory={setActiveCategory}
-            />
-          )}
-
-          
 
           {activeCategory === "files" && (
             <FilesSection
@@ -3223,20 +3209,8 @@ export function SettingsPage({
               </header>
               <div className="env-summary-grid settings-env-grid" ref={registerFocusTarget("runtime_status")}>
                 <div className="metric-card">
-                  <span className="metric-label">推荐设备</span>
-                  <strong className="metric-value">{environment?.recommendedDevice || "-"}</strong>
-                </div>
-                <div className="metric-card">
-                  <span className="metric-label">请求设备</span>
-                  <strong className="metric-value">{devicePreferenceLabel(form.device_preference)}</strong>
-                </div>
-                <div className="metric-card">
                   <span className="metric-label">生效设备</span>
                   <strong className={`metric-value ${(form.transcription_provider === "funasr" ? normalizeDevicePreference(form.funasr_device) : normalizeDevicePreference(form.whisper_device)) === "cuda" ? "text-success" : ""}`}>{form.transcription_provider === "funasr" ? devicePreferenceLabel(form.funasr_device) : devicePreferenceLabel(form.whisper_device)}</strong>
-                </div>
-                <div className="metric-card">
-                  <span className="metric-label">推荐模型</span>
-                  <strong className="metric-value">{environment?.recommendedModel || "-"}</strong>
                 </div>
                 <div className="metric-card">
                   <span className="metric-label">GPU 状态</span>
@@ -3258,14 +3232,6 @@ export function SettingsPage({
               <div className="settings-cuda-section">
                 <h3 className="settings-cuda-title">CUDA 目标版本</h3>
                 <div className="cuda-insight-grid">
-                  <div className="setting-row">
-                    <span className="setting-label">目标运行环境</span>
-                    <span className="setting-value">{targetRuntimeChannel}</span>
-                  </div>
-                  <div className="setting-row">
-                    <span className="setting-label">当前运行环境</span>
-                    <span className="setting-value">{environment?.runtimeChannel || form.runtime_channel || "base"}</span>
-                  </div>
                   <div className="setting-row">
                     <span className="setting-label">运行环境状态</span>
                     <span className="setting-value">{environment?.runtimeReady ? "已就绪" : environment?.runtimeError ? "异常" : "检测中..."}</span>
@@ -3369,7 +3335,7 @@ export function SettingsPage({
                     <strong>{outdatedRuntimeChannels.length > 0 ? "有运行环境需要同步" : "运行环境基础版本一致"}</strong>
                     <span>
                       {outdatedRuntimeChannels.length > 0
-                        ? `${outdatedRuntimeChannels.map((channel) => channel.runtimeChannel).join("、")} 需要同步基础文件；同步会保留 CUDA / ASR / 知识库扩展包。`
+                        ? `${outdatedRuntimeChannels.map((channel) => runtimeChannelLabel(channel.runtimeChannel)).join("、")} 需要同步基础文件；同步会保留 CUDA / ASR / 知识库扩展包。`
                         : `当前基础版本 ${runtimeStatus?.baseAppVersion || "-"}，每 30 分钟自动检查一次。`}
                     </span>
                   </span>
@@ -3399,7 +3365,7 @@ export function SettingsPage({
                   {(runtimeStatus?.channels || []).map((channel) => (
                     <div className="runtime-channel-row" key={channel.runtimeChannel} role="listitem">
                       <div>
-                        <strong>{channel.runtimeChannel}</strong>
+                        <strong>{runtimeChannelLabel(channel.runtimeChannel)}</strong>
                         <span>{channel.ready ? "已就绪" : channel.exists ? "缺少 Python" : "未创建"}</span>
                       </div>
                       <div>

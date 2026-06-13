@@ -431,11 +431,11 @@ export function App() {
     && !snapshot.runtimeInitializing
   );
   const runtimeStatusText = useMemo(() => {
-    if (snapshot.runtimeInitializing) return "运行环境准备中";
-    if (runtimeStartupStatus === "error") return "运行环境异常";
-    if (snapshot.environment?.runtimeReady === false) return "运行环境未就绪";
-    if (snapshot.environment) return "运行环境就绪";
-    return snapshot.serviceOnline ? "检测中" : "等待服务";
+    if (snapshot.runtimeInitializing) return "加载中";
+    if (runtimeStartupStatus === "error") return "异常";
+    if (snapshot.environment?.runtimeReady === false) return "未就绪";
+    if (snapshot.environment) return "就绪";
+    return snapshot.serviceOnline ? "检测中" : "等待服务启动";
   }, [runtimeStartupStatus, snapshot.environment, snapshot.runtimeInitializing, snapshot.serviceOnline]);
 
   useEffect(() => {
