@@ -956,7 +956,6 @@ export function SettingsPage({
   const serviceOnline = snapshot.serviceOnline;
   const effectiveLogPath = logPath || snapshot.systemInfo?.service?.log_file || desktop.logPath || "-";
   const targetRuntimeChannel = `gpu-${form?.cuda_variant || "cu128"}`;
-  const activeCategoryMeta = settingsCategories.find((category) => category.id === activeCategory) || settingsCategories[0];
   const workflowCategories = settingsCategories.filter((category) => category.group === "workflow");
   const systemCategories = settingsCategories.filter((category) => category.group === "system");
   const normalizedSettingsSearchQuery = settingsSearchQuery.trim().toLowerCase();
@@ -1912,26 +1911,6 @@ export function SettingsPage({
         ]}
       />
       <aside className="settings-nav" ref={settingsNavRef}>
-        <div className="settings-nav-header">
-          <span className="settings-nav-label-small">Echo</span>
-          <div className="settings-nav-brand-card">
-            <div className="settings-nav-brand-copy">
-              <span className="settings-nav-brand-kicker">设置</span>
-              <strong>管理应用与运行配置</strong>
-              <p>调整目录、模型、服务与环境配置。</p>
-            </div>
-            <div className="settings-nav-brand-metrics">
-              <div className="settings-nav-metric">
-                <span>服务</span>
-                <strong>{serviceOnline ? "在线" : backendRunning ? "启动中" : "离线"}</strong>
-              </div>
-              <div className="settings-nav-metric">
-                <span>设备</span>
-                <strong>{devicePreferenceLabel(form.whisper_device)}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
         <div className="settings-nav-list">
           <div className="settings-nav-group">
             <span className="settings-nav-group-label">工作流</span>
@@ -1976,24 +1955,6 @@ export function SettingsPage({
           <button className="primary-button settings-save-btn" type="button" disabled={isSaving || !isDirty} onClick={async (e) => { e.preventDefault(); await save(e as FormEvent); }}>
             {isSaving ? "保存中..." : isDirty ? "保存设置" : "已保存"}
           </button>
-          <div className="settings-nav-summary">
-            <div className="settings-nav-summary-row">
-              <span>运行环境</span>
-              <strong>{environment?.runtimeChannel || form.runtime_channel || "base"}</strong>
-            </div>
-            <div className="settings-nav-summary-row">
-              <span>LLM</span>
-              <strong>{llmReady ? "已配置" : form.llm_enabled ? "待补全" : "关闭"}</strong>
-            </div>
-            <div className="settings-nav-summary-row">
-              <span>自动导图</span>
-              <strong>{form.auto_generate_mindmap ? "开启" : "关闭"}</strong>
-            </div>
-            <div className="settings-nav-summary-row">
-              <span>知识库</span>
-              <strong>{form.knowledge_enabled ? (knowledgeDepsReady ? "就绪" : "待安装") : "关闭"}</strong>
-            </div>
-          </div>
         </div>
       </aside>
 
@@ -2037,35 +1998,26 @@ export function SettingsPage({
               </div>
             ) : null}
           </section>
-          <header className="settings-page-hero">
-            <div className="settings-page-hero-copy">
-              <span className="settings-page-kicker">设置</span>
-              <h1>{activeCategoryMeta.label}</h1>
-              <p>{activeCategoryMeta.description}</p>
-            </div>
-          </header>
 
-          {configHealth.checked ? (
+          {configHealth.checked && !configHealth.isConfigured ? (
             <section className={`settings-config-health-card tone-${configHealth.state}`}>
               <div className="settings-config-health-copy">
-                <h3>{configHealth.hasBlockingIssues ? "先补全关键配置，再开始处理视频" : configHealth.isConfigured ? "当前配置状态良好" : "建议补全增强能力配置"}</h3>
+                <h3>{configHealth.hasBlockingIssues ? "先补全关键配置，再开始处理视频" : "建议补全增强能力配置"}</h3>
                 <p>{configHealth.summary}</p>
               </div>
-              {!configHealth.isConfigured ? (
-                <div className="settings-config-health-list">
-                  {configHealth.issues.map((issue) => (
-                    <button
-                      className="settings-config-health-item"
-                      key={issue.key}
-                      type="button"
-                      onClick={() => handleConfigIssueClick(issue.key)}
-                    >
-                      <strong>{issue.title}</strong>
-                      <span>{issue.description}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+              <div className="settings-config-health-list">
+                {configHealth.issues.map((issue) => (
+                  <button
+                    className="settings-config-health-item"
+                    key={issue.key}
+                    type="button"
+                    onClick={() => handleConfigIssueClick(issue.key)}
+                  >
+                    <strong>{issue.title}</strong>
+                    <span>{issue.description}</span>
+                  </button>
+                ))}
+              </div>
             </section>
           ) : null}
 
@@ -2122,7 +2074,7 @@ export function SettingsPage({
             <section className="settings-category-section">
               <header className="settings-category-header">
                 <h2>语音转文字</h2>
-                <p>配置视频音频如何转成文本：云端 ASR 更省心，本地 ASR 更依赖运行环境和设备。</p>
+                <p>选择云端或本地 ASR，配置模型和设备。</p>
               </header>
               <div className="settings-form-group">
                 <label className="settings-input-group">
@@ -2358,15 +2310,13 @@ export function SettingsPage({
             <section className="settings-category-section generation-settings-section">
               <header className="settings-category-header">
                 <h2>摘要生成</h2>
-                <p>按"基础生成、模型接入、自动产物、图文截图、长视频切块"分层管理，日常开关留在页面，密钥和模型细节放进悬浮窗。</p>
+                <p>AI 摘要开关、模型接入、图文笔记和长视频切块。</p>
               </header>
               <div className="generation-settings-tree">
                 <section className="settings-tree-panel">
                   <header className="settings-tree-panel-header">
-                    <span className="settings-tree-index">01</span>
                     <div>
                       <h3>基础生成</h3>
-                      <p>控制摘要是否使用 LLM、输出语言和失败重试。</p>
                     </div>
                   </header>
                   <div className="settings-tree-grid">
@@ -2408,10 +2358,8 @@ export function SettingsPage({
 
                 <section className="settings-tree-panel">
                   <header className="settings-tree-panel-header">
-                    <span className="settings-tree-index">02</span>
                     <div>
                       <h3>模型接入</h3>
-                      <p>主摘要模型和视觉理解模型只展示状态，具体地址、密钥和测试放入悬浮窗。</p>
                     </div>
                   </header>
                   <div className="settings-model-summary-grid">
@@ -2482,10 +2430,8 @@ export function SettingsPage({
 
                 <section className="settings-tree-panel">
                   <header className="settings-tree-panel-header">
-                    <span className="settings-tree-index">03</span>
                     <div>
                       <h3>自动产物</h3>
-                      <p>摘要完成后是否自动追加导图和图文笔记。</p>
                     </div>
                   </header>
                   <div className="settings-visual-note-presets" aria-label="知识笔记预设">
@@ -2579,10 +2525,8 @@ export function SettingsPage({
                 {(form.visual_note_mode || "text") !== "text" ? (
                   <section className="settings-tree-panel">
                     <header className="settings-tree-panel-header">
-                      <span className="settings-tree-index">04</span>
                       <div>
                         <h3>图文截图</h3>
-                        <p>只影响图文笔记抽帧和图片质量，不影响文本总结。</p>
                       </div>
                     </header>
                     <div className="settings-tree-grid">
@@ -2621,10 +2565,8 @@ export function SettingsPage({
 
                 <section className="settings-tree-panel">
                   <header className="settings-tree-panel-header">
-                    <span className="settings-tree-index">{(form.visual_note_mode || "text") !== "text" ? "05" : "04"}</span>
                     <div>
                       <h3>长视频切块</h3>
-                      <p>控制长视频拆分摘要的连续性和单块长度。</p>
                     </div>
                   </header>
                   <div className="settings-tree-grid">
@@ -2638,10 +2580,6 @@ export function SettingsPage({
                       <input className="settings-input-field" type="number" min={1} value={form.summary_chunk_overlap_segments} onChange={(e) => updateForm({ ...form, summary_chunk_overlap_segments: parseMinOneInt(e.target.value, 2) })} />
                       <span className="settings-input-caption">分块之间保留的重叠段落。</span>
                     </label>
-                    <div className="settings-inline-alert info">
-                      <strong>分块并发在性能页调整</strong>
-                      <span>如果需要控制单个任务内部同时请求的摘要块数量，请前往"性能与资源"。</span>
-                    </div>
                   </div>
                 </section>
               </div>
@@ -2652,15 +2590,13 @@ export function SettingsPage({
             <section className="settings-category-section generation-settings-section">
               <header className="settings-category-header">
                 <h2>知识库与问答</h2>
-                <p>知识库默认关闭，依赖按需安装到当前运行环境。按"基础开关、向量模型、LLM 配置"分层管理。</p>
+                <p>开关、索引策略、向量模型和问答 LLM。</p>
               </header>
               <div className="generation-settings-tree">
                 <section className="settings-tree-panel">
                   <header className="settings-tree-panel-header">
-                    <span className="settings-tree-index">01</span>
                     <div>
                       <h3>基础开关</h3>
-                      <p>控制知识库启停、索引策略和依赖安装。</p>
                     </div>
                   </header>
                   <div className="settings-tree-grid">
@@ -2694,10 +2630,8 @@ export function SettingsPage({
 
                 <section className="settings-tree-panel">
                   <header className="settings-tree-panel-header">
-                    <span className="settings-tree-index">02</span>
                     <div>
                       <h3>运行依赖</h3>
-                      <p>知识库依赖（chromadb、sentence-transformers）按需安装，不会随应用更新被覆盖。</p>
                     </div>
                   </header>
                   <div className="settings-tree-grid">
@@ -2737,10 +2671,8 @@ export function SettingsPage({
 
                 <section className="settings-tree-panel">
                   <header className="settings-tree-panel-header">
-                    <span className="settings-tree-index">02</span>
                     <div>
                       <h3>向量模型</h3>
-                      <p>选择 Embedding 模型的下载源和模型名。国内用户建议使用 ModelScope 源或 HuggingFace 镜像。</p>
                     </div>
                   </header>
                   <div className="settings-tree-grid">
@@ -2861,10 +2793,8 @@ export function SettingsPage({
 
                 <section className="settings-tree-panel">
                   <header className="settings-tree-panel-header">
-                    <span className="settings-tree-index">03</span>
                     <div>
                       <h3>知识库 LLM</h3>
-                      <p>自动打标和知识库问答可以跟随主 LLM，也可以使用独立配置。</p>
                     </div>
                   </header>
                   <div className="settings-tree-grid">
@@ -2997,7 +2927,6 @@ export function SettingsPage({
                       {undoPromptValues?.summary_system_prompt !== undefined && (
                         <button className="secondary-button" type="button" onClick={undoPromptReset}>回退设置</button>
                       )}
-                      <span className="settings-input-caption">控制视频摘要生成时的角色、风格和整体约束。</span>
                     </div>
                   </label>
                   <label className="settings-input-group" ref={registerFocusTarget("summary_user_prompt_template")}>
@@ -3145,7 +3074,6 @@ export function SettingsPage({
                       {undoPromptValues?.knowledge_note_system_prompt !== undefined && (
                         <button className="secondary-button" type="button" onClick={undoPromptReset}>回退设置</button>
                       )}
-                      <span className="settings-input-caption">控制知识笔记生成时的角色、风格和整体约束。</span>
                     </div>
                   </label>
                   <label className="settings-input-group" ref={registerFocusTarget("knowledge_note_user_prompt_template")}>
@@ -3207,7 +3135,6 @@ export function SettingsPage({
                     {undoPromptValues?.visual_note_system_prompt !== undefined && (
                       <button className="secondary-button" type="button" onClick={undoPromptReset}>回退设置</button>
                     )}
-                    <span className="settings-input-caption">控制理解型图文笔记如何把图片解析整合进正文。</span>
                   </div>
                 </label>
                 <label className="settings-input-group" ref={registerFocusTarget("visual_frame_planning_prompt")}>
@@ -3544,7 +3471,6 @@ export function SettingsPage({
               form={form}
               updateForm={updateForm}
               registerFocusTarget={registerFocusTarget}
-              snapshot={snapshot}
               desktop={desktop}
               serviceOnline={serviceOnline}
               backendRunning={backendRunning}

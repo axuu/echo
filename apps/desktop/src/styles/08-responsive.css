@@ -251,18 +251,7 @@
   }
 
   .settings-tree-panel {
-    grid-template-columns: 30px minmax(0, 1fr);
     padding: 16px;
-  }
-
-  .settings-tree-panel::before {
-    left: 30px;
-  }
-
-  .settings-tree-index {
-    width: 30px;
-    height: 30px;
-    font-size: 0.72rem;
   }
 }
 

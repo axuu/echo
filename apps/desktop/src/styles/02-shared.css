@@ -1,7 +1,6 @@
 
 .library-page,
-.video-detail-page,
-.settings-grid {
+.video-detail-page {
   display: grid;
   gap: 24px;
   animation: fade-up 300ms ease;

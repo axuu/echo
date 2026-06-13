@@ -25,7 +25,7 @@ export function PerformanceSection({
             <section className="settings-category-section">
               <header className="settings-category-header">
                 <h2>性能调优</h2>
-                <p>控制任务级并发与单任务内部分块并发，减少本地资源争抢和云端限流压力。</p>
+                <p>并发数、重试和资源分配。</p>
               </header>
               <div className="settings-form-group">
                 <label className="settings-input-group" ref={registerFocusTarget("task_concurrency")}>
@@ -55,7 +55,6 @@ export function PerformanceSection({
                     <button className="secondary-button" type="button" onClick={() => setTaskListOpen(true)}>
                       查看 tasklist
                     </button>
-                    <span className="settings-input-caption">使用悬浮窗快速查看最近任务，避免占用主要设置区域。</span>
                   </div>
                 </div>
               </div>

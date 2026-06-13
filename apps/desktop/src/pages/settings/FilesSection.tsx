@@ -100,11 +100,8 @@ export function FilesSection({
                         <span className="settings-update-label">{directory.label}</span>
                         <strong>{formatStorageSize(directory.sizeBytes)}</strong>
                       </div>
-                      <button className="secondary-button" type="button" onClick={() => void openManagedDirectory(directory.key)}>
-                        打开目录
-                      </button>
                     </div>
-                    <p className="settings-storage-path">{directory.path}</p>
+                    <p className="settings-storage-path"><a href="#" onClick={(e) => { e.preventDefault(); void openManagedDirectory(directory.key); }}>{directory.path}</a></p>
                     <div className="settings-storage-meta">
                       <span>{directory.exists ? "目录存在" : "目录不存在"}</span>
                       <span>{formatStorageCount(directory.fileCount, "文件")}</span>

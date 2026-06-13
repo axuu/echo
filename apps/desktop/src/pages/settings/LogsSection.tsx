@@ -1,14 +1,13 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 
 import { api } from "../../api";
-import type { DesktopState, Snapshot } from "../../appModel";
+import type { DesktopState } from "../../appModel";
 import type { ServiceSettings } from "../../types";
 
 type LogsSectionProps = {
   form: ServiceSettings;
   updateForm: (next: ServiceSettings) => void;
   registerFocusTarget: (targetKey: string) => (node: HTMLElement | null) => void;
-  snapshot: Snapshot;
   desktop: DesktopState;
   serviceOnline: boolean;
   backendRunning: boolean;
@@ -41,7 +40,6 @@ export function LogsSection({
   form,
   updateForm,
   registerFocusTarget,
-  snapshot,
   desktop,
   serviceOnline,
   backendRunning,
@@ -86,11 +84,7 @@ export function LogsSection({
                   </span>
                   {desktop.backend?.pid ? <span className="helper-chip">PID {desktop.backend.pid}</span> : null}
                 </div>
-                <div className="cuda-insight-grid">
-                  <div className="setting-row"><span className="setting-label">服务名</span><span className="setting-value">{snapshot.systemInfo?.application?.name || "-"}</span></div>
-                  <div className="setting-row"><span className="setting-label">版本</span><span className="setting-value">{snapshot.systemInfo?.application?.version || "-"}</span></div>
-                  <div className="setting-row"><span className="setting-label">日志文件</span><span className="setting-value" style={{ fontSize: "0.82rem", wordBreak: "break-all", overflowWrap: "anywhere" }}>{effectiveLogPath}</span></div>
-                </div>
+                <p className="settings-update-meta" style={{ wordBreak: "break-all", overflowWrap: "anywhere" }}>日志文件：{effectiveLogPath}</p>
               </div>
 
               {/* ═══════ 服务管理 ═══════ */}
@@ -250,9 +244,10 @@ export function LogsSection({
                 </div>
                 <textarea ref={logTextareaRef} className="textarea-field log-viewer" rows={22} readOnly value={filteredLogOutput || "暂无日志"}></textarea>
                 <div className="desktop-actions" style={{ marginTop: 12 }}>
-                  <button className="secondary-button" type="button" onClick={() => void refreshLogs()}>刷新日志</button>
+                  <button className="primary-button" type="button" onClick={() => void refreshLogs()}>刷新日志</button>
                   <button className="secondary-button" type="button" onClick={async () => { await window.desktop?.shell.openPath(effectiveLogPath); }}>打开日志文件</button>
                   <button className="secondary-button" type="button" onClick={async () => { const p = await (window.desktop as any)?.logs?.exportLog?.(); if (p) setServiceStatus(`日志已导出到 ${p}`); }}>导出日志</button>
+                  <span style={{ flex: 1 }} />
                   <button className="secondary-button danger-button" type="button" onClick={async () => { await (window.desktop as any)?.logs?.clearLog?.(); await refreshLogs(); setServiceStatus("日志已清空"); }}>清空日志</button>
                 </div>
               </div>
